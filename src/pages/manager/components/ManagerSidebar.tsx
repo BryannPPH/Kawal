@@ -1,18 +1,6 @@
-import { ClipboardList, HardHat, LayoutDashboard, Radio, ShieldAlert, TimerReset, Users, WalletCards } from 'lucide-react';
+import { HardHat, TimerReset } from 'lucide-react';
+import { managerSections } from '../../../constants/managerNavigation';
 import type { ManagerSection } from '../../../types/navigation';
-
-const managerMenu = [
-  { label: 'Dashboard', section: 'dashboard', icon: LayoutDashboard },
-  { label: 'Workers', section: 'workers', icon: Users },
-  { label: 'Tasks', section: 'tasks', icon: ClipboardList },
-  { label: 'Payroll', section: 'payroll', icon: WalletCards },
-  { label: 'IoT Panel', section: 'iot', icon: Radio },
-  { label: 'Incident Center', section: 'incidents', icon: ShieldAlert }
- ] satisfies Array<{
-  label: string;
-  section: ManagerSection;
-  icon: typeof LayoutDashboard;
-}>;
 
 type ManagerSidebarProps = {
   activeSection: ManagerSection;
@@ -20,7 +8,7 @@ type ManagerSidebarProps = {
 };
 
 export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSidebarProps) {
-  const activeLabel = managerMenu.find((item) => item.section === activeSection)?.label ?? 'Dashboard';
+  const activeLabel = managerSections.find((item) => item.section === activeSection)?.label ?? 'Dashboard';
 
   return (
     <aside className="hidden w-[248px] shrink-0 border-r border-[#F3D7C8] bg-white px-5 py-6 lg:flex lg:flex-col">
@@ -36,7 +24,7 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
         </div>
 
         <nav className="space-y-1" aria-label="Manager navigation">
-          {managerMenu.map(({ label, section, icon: Icon }) => {
+          {managerSections.map(({ label, section, icon: Icon }) => {
             const active = section === activeSection;
 
             return (

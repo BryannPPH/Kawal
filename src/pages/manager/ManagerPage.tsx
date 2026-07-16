@@ -2,6 +2,7 @@ import { Bell, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
+import { getManagerSectionFromPath, managerSectionMeta, managerSections } from '../../constants/managerNavigation';
 import { useWorkforceData } from '../../hooks/useWorkforceData';
 import type { ManagerSection } from '../../types/navigation';
 import { ManagerSidebar } from './components/ManagerSidebar';
@@ -16,59 +17,10 @@ type ManagerPageProps = {
   onLogout: () => void;
 };
 
-const managerSectionMeta: Record<ManagerSection, { title: string; description: string; eyebrow: string; path: string }> = {
-  dashboard: {
-    title: 'Dashboard',
-    description: 'Assignment, worker status, and safety review in one clean operational view.',
-    eyebrow: 'Garudie Workforce',
-    path: '/manager'
-  },
-  workers: {
-    title: 'Workers',
-    description: 'Monitor crew availability, fatigue, assignment fit, and zone coverage.',
-    eyebrow: 'Crew Operations',
-    path: '/manager/workers'
-  },
-  tasks: {
-    title: 'Tasks',
-    description: 'Track assignment ownership, review status, and safety-critical work.',
-    eyebrow: 'Task Control',
-    path: '/manager/tasks'
-  },
-  payroll: {
-    title: 'Payroll',
-    description: 'Review shift earnings, bonus eligibility, and payout readiness.',
-    eyebrow: 'Compensation',
-    path: '/manager/payroll'
-  },
-  iot: {
-    title: 'IoT Panel',
-    description: 'Monitor wearable connectivity, SOS incidents, rest commands, and risk policy state.',
-    eyebrow: 'Device Safety',
-    path: '/manager/iot'
-  },
-  incidents: {
-    title: 'Incident Center',
-    description: 'Monitor SOS alerts, near-miss reports, emergency history, and escalation actions.',
-    eyebrow: 'FR-SOS / FR-INC',
-    path: '/manager/incidents'
-  }
-};
-
-function getManagerSectionFromPath(): ManagerSection {
-  const section = window.location.pathname.split('/')[2];
-
-  if (section === 'workers' || section === 'tasks' || section === 'payroll' || section === 'iot' || section === 'incidents') {
-    return section;
-  }
-
-  return 'dashboard';
-}
-
 export function ManagerPage({ onLogout }: ManagerPageProps) {
   const { workers, tasks, notifications, loading, error, markNotificationRead, createTask } = useWorkforceData();
   const [selectedWorkerId, setSelectedWorkerId] = useState('budi');
-  const [activeSection, setActiveSection] = useState<ManagerSection>(getManagerSectionFromPath);
+  const [activeSection, setActiveSection] = useState<ManagerSection>(() => getManagerSectionFromPath(window.location.pathname));
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [taskTemplate, setTaskTemplate] = useState('');
@@ -86,7 +38,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const unreadNotifications = notifications.filter((notification) => !notification.read);
 
   useEffect(() => {
-    const handlePopState = () => setActiveSection(getManagerSectionFromPath());
+    const handlePopState = () => setActiveSection(getManagerSectionFromPath(window.location.pathname));
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -246,7 +198,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
           </div>
 
           <div className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            {(['dashboard', 'workers', 'tasks', 'payroll', 'iot', 'incidents'] as const).map((section) => (
+            {managerSections.map(({ section, label }) => (
               <button
                 key={section}
                 type="button"
@@ -255,7 +207,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                   activeSection === section ? 'bg-[#FD7124] text-white' : 'border border-[#F3D7C8] bg-white text-[#5F5A56]'
                 }`}
               >
-                {section}
+                {label}
               </button>
             ))}
           </div>

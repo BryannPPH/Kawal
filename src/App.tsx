@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
+import { clearAuthSession, getStoredRole, saveAuthSession } from './lib/authStorage';
 import { LoginPage } from './pages/login/LoginPage';
 import { ManagerPage } from './pages/manager/ManagerPage';
 import { WorkerPage } from './pages/worker/WorkerPage';
 import type { AuthUser, RouteName, UserRole } from './types/navigation';
-
-const authStorageKey = 'garudie-auth-role';
-const authUserStorageKey = 'garudie-auth-user';
 
 function getRouteFromPath(): RouteName {
   if (window.location.pathname.startsWith('/login')) {
@@ -15,27 +13,9 @@ function getRouteFromPath(): RouteName {
   return window.location.pathname.startsWith('/worker') ? 'worker' : 'manager';
 }
 
-function getStoredRole(): UserRole | null {
-  const role = localStorage.getItem(authStorageKey);
-  return role === 'manager' || role === 'worker' || role === 'hse' || role === 'foreman' ? role : null;
-}
-
-function getStoredUser(): AuthUser | null {
-  const user = localStorage.getItem(authUserStorageKey);
-
-  if (!user) return null;
-
-  try {
-    return JSON.parse(user) as AuthUser;
-  } catch {
-    return null;
-  }
-}
-
 function App() {
   const [route, setRoute] = useState<RouteName>(getRouteFromPath);
   const [role, setRole] = useState<UserRole | null>(getStoredRole);
-  const [, setUser] = useState<AuthUser | null>(getStoredUser);
 
   useEffect(() => {
     const handlePopState = () => setRoute(getRouteFromPath());
@@ -76,10 +56,8 @@ function App() {
         return payload.error ?? 'Unable to sign in';
       }
 
-      localStorage.setItem(authStorageKey, payload.user.role);
-      localStorage.setItem(authUserStorageKey, JSON.stringify(payload.user));
+      saveAuthSession(payload.user);
       setRole(payload.user.role);
-      setUser(payload.user);
       navigate(payload.user.role === 'worker' ? 'worker' : 'manager');
       return null;
     } catch {
@@ -88,10 +66,8 @@ function App() {
   };
 
   const logout = () => {
-    localStorage.removeItem(authStorageKey);
-    localStorage.removeItem(authUserStorageKey);
+    clearAuthSession();
     setRole(null);
-    setUser(null);
     navigate('login');
   };
 
