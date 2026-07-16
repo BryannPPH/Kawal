@@ -37,14 +37,30 @@ import {
   getSupabaseNotifications,
   getSupabaseTasks,
   getSupabaseUsers,
+  getSupabaseWorkerAppData,
   getSupabaseWorkers,
   getSupabaseWorkforceData,
   ingestSupabaseIoTMessage,
   listSupabaseDevices,
   markSupabaseNotificationRead,
+  completeSupabaseWorkerAssignment,
+  reportSupabaseWorkerHazard,
+  requestSupabaseWorkerRest,
   shouldUseSupabase,
+  triggerSupabaseWorkerSos,
+  updateSupabaseWorkerShiftStatus,
   updateSupabaseIncidentState
 } from './supabase';
+import {
+  completeWorkerAssignment,
+  getWorkerAppData,
+  performWorkerPpeCheck,
+  readWorkerNotification,
+  reportWorkerHazard,
+  requestWorkerRest,
+  triggerWorkerSos,
+  updateWorkerShiftStatus
+} from './workerActions';
 
 const port = Number(process.env.API_PORT ?? 3001);
 const useSupabase = shouldUseSupabase();
@@ -125,6 +141,88 @@ const server = Bun.serve({
 
     if (request.method === 'GET' && url.pathname === '/api/workers') {
       return jsonResponse(useSupabase ? await getSupabaseWorkers() : getWorkers());
+    }
+
+    const workerAppMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/app$/);
+
+    if (request.method === 'GET' && workerAppMatch) {
+      return jsonResponse(useSupabase ? await getSupabaseWorkerAppData(workerAppMatch[1]) : getWorkerAppData(workerAppMatch[1]));
+    }
+
+    const workerStatusMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/status$/);
+
+    if (request.method === 'POST' && workerStatusMatch) {
+      const body = await readJsonBody<{ status?: 'waiting' | 'working' | 'break' | 'done' }>(request);
+
+      if (!body.status || !['waiting', 'working', 'break', 'done'].includes(body.status)) {
+        return jsonResponse({ error: 'Valid status is required' }, { status: 400 });
+      }
+
+      return jsonResponse(useSupabase
+        ? await updateSupabaseWorkerShiftStatus(workerStatusMatch[1], body.status)
+        : updateWorkerShiftStatus(workerStatusMatch[1], body.status));
+    }
+
+    const workerPpeCheckMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/ppe-check$/);
+
+    if (request.method === 'POST' && workerPpeCheckMatch) {
+      const body = await readJsonBody<{ imageDataUrl?: string }>(request);
+
+      if (!body.imageDataUrl) {
+        return jsonResponse({ error: 'Camera image is required' }, { status: 400 });
+      }
+
+      if (useSupabase) {
+        return jsonResponse({ error: 'PPE check is currently wired to the local database mode' }, { status: 501 });
+      }
+
+      return jsonResponse(await performWorkerPpeCheck(workerPpeCheckMatch[1], body.imageDataUrl), { status: 201 });
+    }
+
+    const workerCompleteMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/complete$/);
+
+    if (request.method === 'POST' && workerCompleteMatch) {
+      return jsonResponse(useSupabase
+        ? await completeSupabaseWorkerAssignment(workerCompleteMatch[1])
+        : completeWorkerAssignment(workerCompleteMatch[1]));
+    }
+
+    const workerHazardMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/hazards$/);
+
+    if (request.method === 'POST' && workerHazardMatch) {
+      const body = await readJsonBody<{ hazardType?: string; note?: string }>(request);
+
+      if (!body.hazardType?.trim()) {
+        return jsonResponse({ error: 'Hazard type is required' }, { status: 400 });
+      }
+
+      return jsonResponse(useSupabase
+        ? await reportSupabaseWorkerHazard(workerHazardMatch[1], body)
+        : reportWorkerHazard(workerHazardMatch[1], body));
+    }
+
+    const workerRestRequestMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/rest-request$/);
+
+    if (request.method === 'POST' && workerRestRequestMatch) {
+      return jsonResponse(useSupabase
+        ? await requestSupabaseWorkerRest(workerRestRequestMatch[1])
+        : requestWorkerRest(workerRestRequestMatch[1]), { status: 202 });
+    }
+
+    const workerSosMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/sos$/);
+
+    if (request.method === 'POST' && workerSosMatch) {
+      return jsonResponse(useSupabase
+        ? await triggerSupabaseWorkerSos(workerSosMatch[1])
+        : triggerWorkerSos(workerSosMatch[1]), { status: 202 });
+    }
+
+    const workerNotificationReadMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/notifications\/([^/]+)\/read$/);
+
+    if (request.method === 'PATCH' && workerNotificationReadMatch) {
+      return jsonResponse(useSupabase
+        ? await markSupabaseNotificationRead(workerNotificationReadMatch[2])
+        : readWorkerNotification(workerNotificationReadMatch[1], workerNotificationReadMatch[2]));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/tasks') {

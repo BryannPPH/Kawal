@@ -40,3 +40,33 @@ textarea {
   border-color: #FD7124;
   box-shadow: 0 0 0 3px rgba(253, 113, 36, 0.12);
 }
+
+.sos-wave {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 5rem;
+  width: 5rem;
+  border-radius: 9999px;
+  border: 0.55rem solid rgba(184, 64, 17, 0.46);
+  box-shadow: 0 0 30px rgba(253, 113, 36, 0.24);
+  transform: translate(-50%, -50%) scale(0.05);
+  transform-origin: center;
+  animation: sos-wave 1.75s ease-out infinite;
+}
+
+@keyframes sos-wave {
+  0% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(0.05);
+  }
+
+  78% {
+    opacity: 0.22;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(5.4);
+  }
+}

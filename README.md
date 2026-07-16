@@ -40,6 +40,26 @@ SUPABASE_SCHEMA=public
 
 The React app still calls the Bun API. The Bun API fetches dashboard data from Supabase when `DATA_SOURCE=supabase`.
 
+## PPE Computer Vision
+
+Worker `Start Task` opens the camera first. The captured frame is sent to `POST /api/workers/:workerId/ppe-check`.
+
+Local demo mode:
+
+```env
+PPE_CHECK_PROVIDER=demo
+```
+
+OpenAI vision mode:
+
+```env
+PPE_CHECK_PROVIDER=openai
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_PPE_MODEL=gpt-5
+```
+
+The backend asks the vision model to return helmet and harness detection as JSON, stores the result in `ppe_checks`, and only allows task start when the latest PPE check is `PASSED`.
+
 ## Demo Login
 
 - Manager: `manager@gmail.com` / `mm`

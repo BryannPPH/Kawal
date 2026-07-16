@@ -2,7 +2,7 @@ import { notifications as fallbackNotifications, tasks as fallbackTasks, workers
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
 import type { IoTDevice, IncidentCenterData, IoTIncident, IoTOverview } from '../types/iot';
 import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
-import { evaluateRisk, parseTopic, validateEnvelope } from './iot';
+import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
 import type { Envelope } from './iot';
 
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
@@ -161,6 +161,163 @@ export async function updateSupabaseIncidentState(incidentId: string, state: str
 
   const rows = await patchRows<SupabaseIncidentRow>('emergency_incidents', `id=eq.${encodeFilterValue(incidentId)}`, updates);
   return rows[0] ? mapIncident(rows[0]) : null;
+}
+
+export async function getSupabaseWorkerAppData(workerId: string) {
+  const [worker] = await selectRows<SupabaseWorkerRow>('workers', `select=*&id=eq.${encodeFilterValue(workerId)}&limit=1`);
+  const mappedWorker = worker ? mapWorker(worker) : null;
+  const [taskRows, notificationRows, breakRows, riskRows, incidentRows] = await Promise.all([
+    mappedWorker ? selectRows<SupabaseTaskRow>('tasks', `select=*&owner=eq.${encodeFilterValue(mappedWorker.name)}&order=id.asc`) : Promise.resolve([]),
+    selectRows<SupabaseNotificationRow>('notifications', `select=*&target_worker_id=eq.${encodeFilterValue(workerId)}&order=created_at.desc`),
+    selectRows<any>('break_sessions', `select=*&worker_id=eq.${encodeFilterValue(workerId)}&status=eq.BREAK_ACTIVE&order=started_at.desc&limit=1`),
+    selectRows<any>('risk_evaluations', `select=*&worker_id=eq.${encodeFilterValue(workerId)}&order=evaluated_at.desc&limit=1`),
+    selectRows<SupabaseIncidentRow>('emergency_incidents', `select=*&worker_id=eq.${encodeFilterValue(workerId)}&state=neq.RESOLVED&order=opened_at.desc&limit=1`)
+  ]);
+
+  return {
+    worker: mappedWorker,
+    tasks: taskRows.map(mapTask),
+    notifications: notificationRows.map(mapNotification),
+    currentBreak: breakRows[0] ?? null,
+    latestRisk: riskRows[0] ?? null,
+    activeIncident: incidentRows[0] ? mapIncident(incidentRows[0]) : null
+  };
+}
+
+export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 'waiting' | 'working' | 'break' | 'done') {
+  await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status });
+  return getSupabaseWorkerAppData(workerId);
+}
+
+export async function completeSupabaseWorkerAssignment(workerId: string) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status: 'done' });
+  await patchRows('tasks', `owner=eq.${encodeFilterValue(data.worker.name)}`, {
+    status: 'Review',
+    due: 'Ready',
+    tone: 'success'
+  });
+  await createSupabaseNotification({
+    title: 'Task ready for review',
+    detail: `${data.worker.name} completed ${data.tasks[0]?.title ?? data.worker.task}.`,
+    tone: 'success',
+    targetLabel: 'Review task',
+    targetSection: 'tasks',
+    targetWorkerId: workerId
+  });
+
+  return getSupabaseWorkerAppData(workerId);
+}
+
+export async function reportSupabaseWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const hazardType = input.hazardType?.trim() || 'Hazard';
+  const note = input.note?.trim();
+  await createSupabaseNotification({
+    title: 'Hazard reported',
+    detail: `${data.worker.name} reported ${hazardType} in ${data.worker.zone}${note ? `: ${note}` : '.'}`,
+    tone: 'warning',
+    targetLabel: 'View worker',
+    targetSection: 'workers',
+    targetWorkerId: workerId
+  });
+
+  return getSupabaseWorkerAppData(workerId);
+}
+
+export async function requestSupabaseWorkerRest(workerId: string) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const device = await getSupabaseDeviceForWorker(workerId);
+
+  if (!device) {
+    await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status: 'break' });
+    await createSupabaseNotification({
+      title: 'Rest requested',
+      detail: `${data.worker.name} requested a break from ${data.worker.zone}.`,
+      tone: 'warning',
+      targetLabel: 'Open worker',
+      targetSection: 'workers',
+      targetWorkerId: workerId
+    });
+    return { ...(await getSupabaseWorkerAppData(workerId)), action: { ok: true, fallback: true } };
+  }
+
+  const result = await ingestSupabaseIoTMessage(
+    `${topicPrefix}/devices/${device.id}/events/rest-request`,
+    JSON.stringify(makeSupabaseEnvelope(device, 'REST_BUTTON_PRESSED', {
+      buttonPressDurationMs: 800,
+      reasonCode: 'WORKER_REQUEST',
+      batteryPct: device.battery_pct ?? undefined
+    }))
+  );
+
+  return { ...(await getSupabaseWorkerAppData(workerId)), action: result };
+}
+
+export async function triggerSupabaseWorkerSos(workerId: string) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const device = await getSupabaseDeviceForWorker(workerId);
+
+  if (!device) {
+    const incidentId = `incident-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    await insertRows('emergency_incidents', [{
+      id: incidentId,
+      worker_id: workerId,
+      task_id: null,
+      zone_id: data.worker.zone,
+      state: 'OPEN',
+      trigger_source: 'WORKER_APP_SOS',
+      device_id: `worker-app-${workerId}`,
+      trigger_message_id: `worker-app-${incidentId}`,
+      opened_at: now,
+      acknowledged_at: null,
+      resolved_at: null,
+      last_known_environment: null,
+      last_known_motion: null,
+      escalation_level: 1
+    }]);
+    await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status: 'emergency' });
+    await createSupabaseNotification({
+      title: 'SOS open',
+      detail: `${data.worker.name} triggered SOS from the worker app in ${data.worker.zone}.`,
+      tone: 'danger',
+      targetLabel: 'Open incident',
+      targetSection: 'incidents',
+      targetWorkerId: workerId
+    });
+    return { ...(await getSupabaseWorkerAppData(workerId)), action: { ok: true, fallback: true, incidentId } };
+  }
+
+  const result = await ingestSupabaseIoTMessage(
+    `${topicPrefix}/devices/${device.id}/events/sos`,
+    JSON.stringify(makeSupabaseEnvelope(device, 'SOS_BUTTON_PRESSED', {
+      buttonPressDurationMs: 1500,
+      batteryPct: device.battery_pct ?? undefined
+    }))
+  );
+
+  return { ...(await getSupabaseWorkerAppData(workerId)), action: result };
 }
 
 export async function ingestSupabaseIoTMessage(topic: string, rawPayload: string) {
@@ -437,6 +594,28 @@ async function createSupabaseNotification(input: Omit<Notification, 'id' | 'read
     target_worker_id: input.targetWorkerId ?? null,
     read: false
   }]);
+}
+
+async function getSupabaseDeviceForWorker(workerId: string) {
+  const [device] = await selectRows<SupabaseDeviceRow>('iot_devices', `select=*&assigned_worker_id=eq.${encodeFilterValue(workerId)}&limit=1`);
+  return device ?? null;
+}
+
+function makeSupabaseEnvelope(device: SupabaseDeviceRow, eventType: string, payload: Record<string, unknown>) {
+  return {
+    schemaVersion: '1.0',
+    messageId: crypto.randomUUID(),
+    deviceId: device.id,
+    workerId: device.assigned_worker_id,
+    siteId: device.assigned_site_id,
+    zoneId: device.assigned_zone_id,
+    taskId: device.assigned_task_id,
+    eventType,
+    recordedAt: new Date().toISOString(),
+    sequenceNumber: Math.floor(Date.now() / 1000),
+    firmwareVersion: device.firmware_version ?? undefined,
+    payload
+  };
 }
 
 async function selectRows<T>(tableName: string, query: string): Promise<T[]> {
