@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { notifications, tasks, workers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
 import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
-import { estimateCapacity } from './capacityEstimator';
+import { estimateCapacity, inferWorkload } from './capacityEstimator';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
 import type { ChronosForecastInput } from './chronosForecasting';
 import { recommendWorkers } from './workerAssignmentEngine';
@@ -546,6 +546,12 @@ type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'temperatureC' | 'humidityPc
   scheduler_recommendation: string;
 };
 
+type EnvironmentRow = {
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  recorded_at: string;
+};
+
 type NotificationRow = {
   id: string;
   title: string;
@@ -598,17 +604,15 @@ export async function createTask(input: {
   unit: string;
   deadline: string;
   priority: string;
-  temperatureC?: number | null;
-  humidityPct?: number | null;
-  workload: string;
   notes?: string;
-  owner?: string;
 }): Promise<Task> {
-  const schedulerRecommendation = await buildSchedulerRecommendation(input, getWorkers());
+  const workload = inferWorkload(input.taskTemplate, input.quantity);
+  const schedulerRecommendation = await buildSchedulerRecommendation({ ...input, workload }, getWorkers());
+  const environment = getLatestEnvironment(input.zone);
   const task: Task = {
     id: slugify(`${input.taskTemplate}-${Date.now()}`),
     title: input.taskTemplate.trim(),
-    owner: input.owner?.trim() || 'Unassigned',
+    owner: 'Unassigned',
     location: input.zone.trim(),
     taskTemplate: input.taskTemplate.trim(),
     project: input.project.trim(),
@@ -617,9 +621,9 @@ export async function createTask(input: {
     unit: input.unit.trim(),
     deadline: input.deadline.trim(),
     priority: input.priority,
-    temperatureC: input.temperatureC ?? null,
-    humidityPct: input.humidityPct ?? null,
-    workload: input.workload.trim(),
+    temperatureC: environment?.temperature_c ?? null,
+    humidityPct: environment?.humidity_pct ?? null,
+    workload,
     notes: input.notes?.trim() ?? '',
     schedulerRecommendation,
     status: 'Open',
@@ -662,6 +666,32 @@ export async function createTask(input: {
   return task;
 }
 
+export async function autoAssignTask(taskId: string): Promise<Task | null> {
+  const row = db.query<TaskRow, [string]>('SELECT * FROM tasks WHERE id = ?').get(taskId);
+
+  if (!row) {
+    return null;
+  }
+
+  const task = await mapTask(row, getWorkers());
+  const bestWorker = task.schedulerRecommendation.selectedWorkerRecommendations[0];
+
+  if (!bestWorker) {
+    throw new Error('No eligible worker is available for automatic assignment');
+  }
+
+  db.transaction(() => {
+    db.prepare('UPDATE tasks SET owner = ?, status = ? WHERE id = ?').run(bestWorker.workerName, 'Assigned', taskId);
+    db.prepare('UPDATE workers SET task = ?, status = ?, zone = ?, workload = ? WHERE id = ?')
+      .run(task.title, 'working', task.zone, task.workload, bestWorker.workerId);
+    db.prepare('UPDATE iot_devices SET assigned_task_id = ?, assigned_zone_id = ?, updated_at = ? WHERE assigned_worker_id = ?')
+      .run(taskId, task.zone, new Date().toISOString(), bestWorker.workerId);
+  })();
+
+  const updatedRow = db.query<TaskRow, [string]>('SELECT * FROM tasks WHERE id = ?').get(taskId);
+  return updatedRow ? mapTask(updatedRow, getWorkers()) : null;
+}
+
 export function getNotifications(): Notification[] {
   return db.query<NotificationRow, []>('SELECT * FROM notifications ORDER BY rowid').all().map(mapNotification);
 }
@@ -699,6 +729,7 @@ function hashPassword(password: string) {
 }
 
 async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> {
+  const environment = getLatestEnvironment(row.zone || row.location);
   const schedulerInput = {
     taskTemplate: row.task_template || row.title,
     project: row.project,
@@ -707,9 +738,7 @@ async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> 
     unit: row.unit,
     deadline: row.deadline || row.due,
     priority: row.priority,
-    temperatureC: row.temperature_c,
-    humidityPct: row.humidity_pct,
-    workload: row.task_workload
+    workload: row.task_workload || inferWorkload(row.task_template || row.title, row.quantity)
   };
 
   return {
@@ -724,9 +753,9 @@ async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> 
     unit: row.unit,
     deadline: schedulerInput.deadline,
     priority: row.priority,
-    temperatureC: row.temperature_c,
-    humidityPct: row.humidity_pct,
-    workload: row.task_workload,
+    temperatureC: environment?.temperature_c ?? null,
+    humidityPct: environment?.humidity_pct ?? null,
+    workload: schedulerInput.workload,
     notes: row.notes,
     schedulerRecommendation: await buildSchedulerRecommendation(schedulerInput, availableWorkers),
     status: row.status,
@@ -743,18 +772,17 @@ async function buildSchedulerRecommendation(input: {
   unit: string;
   deadline: string;
   priority: string;
-  temperatureC?: number | null;
-  humidityPct?: number | null;
   workload: string;
 }, availableWorkers: Worker[]): Promise<SchedulerRecommendation> {
   const urgent = input.priority === 'High' || input.priority === 'Critical';
+  const environment = getLatestEnvironment(input.zone);
   const capacity = estimateCapacity({
     taskTemplate: input.taskTemplate,
     quantity: input.quantity,
     deadline: input.deadline,
     environment: {
-      temperatureC: input.temperatureC,
-      humidityPct: input.humidityPct,
+      temperatureC: environment?.temperature_c,
+      humidityPct: environment?.humidity_pct,
       workload: input.workload
     },
     availableWorkerCount: availableWorkers.length
@@ -791,6 +819,7 @@ async function buildSchedulerRecommendation(input: {
     recommendedStartTime: urgent ? 'Next safe available window' : 'Next normal scheduling window',
     estimatedCompletionTime: capacity.estimatedFinishTime,
     estimatedFinishTime: capacity.estimatedFinishTime,
+    predictedWorkload: capacity.predictedWorkload,
     selectedWorkerRecommendations: candidateWorkers,
     assignmentEngineVersion: 'worker-assignment-engine-v1',
     expectedProductivityRate: `${capacity.productivityRatePerWorkerHour} ${input.unit}/worker-hour`,
@@ -798,13 +827,25 @@ async function buildSchedulerRecommendation(input: {
     capacityEstimatorVersion: capacity.estimatorVersion,
     requiredPpeAndCertifications,
     dependencyStatus: inferDependencyStatus(input),
-    currentEnvironmentalConditions: capacity.warnings.length ? capacity.warnings.join(' ') : 'Normal-condition capacity estimate.',
+    currentEnvironmentalConditions: environment
+      ? `IoT telemetry: ${environment.temperature_c ?? '-'}C, ${environment.humidity_pct ?? '-'}% humidity at ${environment.recorded_at}.`
+      : 'No current IoT telemetry for this zone; baseline capacity conditions are in use.',
     safetyAndOperationalWarnings: urgent
       ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.', ...capacity.warnings]
       : ['Confirm zone access before dispatch.', ...capacity.warnings],
     chronosForecast,
     schedulerStatus: 'Live scheduler inference: capacity, worker assignment, fatigue status, and Chronos-2 forecasting are recalculated from current task and worker data.'
   };
+}
+
+function getLatestEnvironment(zone: string): EnvironmentRow | null {
+  return db.query<EnvironmentRow, [string]>(`
+    SELECT temperature_c, humidity_pct, recorded_at
+    FROM environment_readings
+    WHERE zone_id = ? AND valid = 1
+    ORDER BY recorded_at DESC
+    LIMIT 1
+  `).get(zone.trim()) ?? null;
 }
 
 function inferDependencyStatus(input: { priority: string; workload: string; zone: string }) {
@@ -898,7 +939,10 @@ function parseStoredSchedulerRecommendation(value: string): SchedulerRecommendat
 
 function inferBreakMinutesFromRecommendation(recommendation: SchedulerRecommendation | null) {
   if (!recommendation) return 0;
-  return recommendation.safetyAndOperationalWarnings.some((warning) => warning.toLowerCase().includes('rest')) ? 15 : 0;
+  return Array.isArray(recommendation.safetyAndOperationalWarnings)
+    && recommendation.safetyAndOperationalWarnings.some((warning) => warning.toLowerCase().includes('rest'))
+    ? 15
+    : 0;
 }
 
 function parseDurationMinutes(value: string) {

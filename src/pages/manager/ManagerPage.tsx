@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { getManagerSectionFromPath, managerSectionMeta, managerSections } from '../../constants/managerNavigation';
+import { taskTemplates } from '../../constants/taskTemplates';
 import { useWorkforceData } from '../../hooks/useWorkforceData';
 import type { ManagerSection } from '../../types/navigation';
 import { ManagerSidebar } from './components/ManagerSidebar';
@@ -29,7 +30,7 @@ type SearchResult = {
 };
 
 export function ManagerPage({ onLogout }: ManagerPageProps) {
-  const { workers, tasks, notifications, loading, error, markNotificationRead, createTask } = useWorkforceData();
+  const { workers, tasks, notifications, loading, error, markNotificationRead, createTask, autoAssignTask } = useWorkforceData();
   const [selectedWorkerId, setSelectedWorkerId] = useState('budi');
   const [activeSection, setActiveSection] = useState<ManagerSection>(() => getManagerSectionFromPath(window.location.pathname));
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -43,12 +44,9 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const [taskUnit, setTaskUnit] = useState('');
   const [taskDeadline, setTaskDeadline] = useState('');
   const [taskPriority, setTaskPriority] = useState('');
-  const [taskTemperatureC, setTaskTemperatureC] = useState('');
-  const [taskHumidityPct, setTaskHumidityPct] = useState('');
-  const [taskWorkload, setTaskWorkload] = useState('');
   const [taskNotes, setTaskNotes] = useState('');
-  const [taskOwner, setTaskOwner] = useState('');
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
   const activeMeta = managerSectionMeta[activeSection];
   const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId) ?? workers[0];
   const unreadNotifications = notifications.filter((notification) => !notification.read);
@@ -133,6 +131,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const submitTask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setTaskError(null);
+    setTaskSubmitting(true);
 
     try {
       await createTask({
@@ -143,11 +142,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
         unit: taskUnit,
         deadline: taskDeadline,
         priority: taskPriority,
-        temperatureC: taskTemperatureC ? Number(taskTemperatureC) : null,
-        humidityPct: taskHumidityPct ? Number(taskHumidityPct) : null,
-        workload: taskWorkload,
-        notes: taskNotes,
-        owner: taskOwner
+        notes: taskNotes
       });
       setTaskTemplate('');
       setTaskProject('');
@@ -156,15 +151,13 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
       setTaskUnit('');
       setTaskDeadline('');
       setTaskPriority('');
-      setTaskTemperatureC('');
-      setTaskHumidityPct('');
-      setTaskWorkload('');
       setTaskNotes('');
-      setTaskOwner('');
       setCreateTaskOpen(false);
       selectSection('tasks');
     } catch (caughtError) {
       setTaskError(caughtError instanceof Error ? caughtError.message : 'Unable to create task');
+    } finally {
+      setTaskSubmitting(false);
     }
   };
 
@@ -214,7 +207,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     }
 
     if (activeSection === 'tasks') {
-      return <TasksView tasks={tasks} />;
+      return <TasksView tasks={tasks} onAutoAssign={autoAssignTask} />;
     }
 
     if (activeSection === 'payroll') {
@@ -403,7 +396,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-semibold text-[#2F2C2A]">Create Task</p>
-                <p className="mt-1 text-sm text-[#776B63]">Capture the task workflow, then review the live scheduler recommendation in Tasks.</p>
+                <p className="mt-1 text-sm text-[#776B63]">The scheduler predicts workload, duration, feasibility, and ranked workers after creation.</p>
               </div>
               <button
                 type="button"
@@ -420,7 +413,10 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-semibold text-[#2F2C2A]">Task Template</span>
-                  <input value={taskTemplate} onChange={(event) => setTaskTemplate(event.target.value)} className="field-input mt-2" placeholder="Task template" required />
+                  <select value={taskTemplate} onChange={(event) => setTaskTemplate(event.target.value)} className="field-input mt-2" required>
+                    <option value="">Select task template</option>
+                    {taskTemplates.map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}
+                  </select>
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-[#2F2C2A]">Project</span>
@@ -434,7 +430,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-[#2F2C2A]">Deadline</span>
-                  <input value={taskDeadline} onChange={(event) => setTaskDeadline(event.target.value)} className="field-input mt-2" placeholder="Deadline" required />
+                  <input value={taskDeadline} onChange={(event) => setTaskDeadline(event.target.value)} type="datetime-local" className="field-input mt-2" required />
                 </label>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -454,30 +450,6 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                   </select>
                 </label>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="block">
-                  <span className="text-sm font-semibold text-[#2F2C2A]">Temperature</span>
-                  <input value={taskTemperatureC} onChange={(event) => setTaskTemperatureC(event.target.value)} type="number" className="field-input mt-2" placeholder="Celsius" />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-[#2F2C2A]">Humidity</span>
-                  <input value={taskHumidityPct} onChange={(event) => setTaskHumidityPct(event.target.value)} type="number" min="0" max="100" className="field-input mt-2" placeholder="%" />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-[#2F2C2A]">Workload</span>
-                  <select value={taskWorkload} onChange={(event) => setTaskWorkload(event.target.value)} className="field-input mt-2" required>
-                    <option value="">Select workload</option>
-                    {['Low', 'Medium', 'High'].map((workload) => <option key={workload}>{workload}</option>)}
-                  </select>
-                </label>
-              </div>
-              <label className="block">
-                <span className="text-sm font-semibold text-[#2F2C2A]">Selected worker</span>
-                <select value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="field-input mt-2">
-                  <option value="">Select worker</option>
-                  {workers.map((worker) => <option key={worker.id}>{worker.name}</option>)}
-                </select>
-              </label>
               <label className="block">
                 <span className="text-sm font-semibold text-[#2F2C2A]">Notes</span>
                 <textarea value={taskNotes} onChange={(event) => setTaskNotes(event.target.value)} className="field-input mt-2 min-h-24 py-3" placeholder="Notes" />
@@ -488,8 +460,8 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
 
             <div className="mt-5 flex justify-end gap-2">
               <Button onClick={() => setCreateTaskOpen(false)}>Cancel</Button>
-              <button type="submit" className="inline-flex h-10 items-center justify-center rounded-md bg-[#FD7124] px-4 text-sm font-semibold text-white transition hover:bg-[#E85F18]">
-                Save Task
+              <button type="submit" disabled={taskSubmitting} className="inline-flex h-10 items-center justify-center rounded-md bg-[#FD7124] px-4 text-sm font-semibold text-white transition hover:bg-[#E85F18] disabled:cursor-wait disabled:opacity-60">
+                {taskSubmitting ? 'Creating...' : 'Save Task'}
               </button>
             </div>
           </form>

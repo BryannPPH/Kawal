@@ -22,6 +22,7 @@ export type CapacityEstimate = {
   deadlineFeasibilityStatus: 'FEASIBLE' | 'AT_RISK' | 'NOT_FEASIBLE' | 'UNKNOWN_DEADLINE';
   productivityRatePerWorkerHour: number;
   environmentFactor: number;
+  predictedWorkload: 'Low' | 'Medium' | 'High';
   warnings: string[];
   estimatorVersion: 'capacity-estimator-v1';
 };
@@ -45,7 +46,8 @@ export function estimateCapacity(input: CapacityEstimateInput): CapacityEstimate
   const now = input.now ?? new Date();
   const quantity = Math.max(1, input.quantity);
   const baseRate = getProductivityRate(input.taskTemplate);
-  const environmentFactor = getEnvironmentFactor(input.environment);
+  const predictedWorkload = inferWorkloadFromRate(input.taskTemplate, quantity, baseRate);
+  const environmentFactor = getEnvironmentFactor({ ...input.environment, workload: input.environment?.workload ?? predictedWorkload });
   const adjustedRate = Math.max(0.5, baseRate * environmentFactor);
   const totalWorkerHours = round(quantity / adjustedRate, 2);
   const availableWorkerCount = Math.max(1, input.availableWorkerCount ?? 6);
@@ -64,9 +66,23 @@ export function estimateCapacity(input: CapacityEstimateInput): CapacityEstimate
     deadlineFeasibilityStatus,
     productivityRatePerWorkerHour: round(adjustedRate, 2),
     environmentFactor,
-    warnings: getWarnings(input.environment, deadlineFeasibilityStatus),
+    predictedWorkload,
+    warnings: getWarnings({ ...input.environment, workload: input.environment?.workload ?? predictedWorkload }, deadlineFeasibilityStatus),
     estimatorVersion: 'capacity-estimator-v1'
   };
+}
+
+export function inferWorkload(taskTemplate: string, quantity: number): CapacityEstimate['predictedWorkload'] {
+  return inferWorkloadFromRate(taskTemplate, Math.max(1, quantity), getProductivityRate(taskTemplate));
+}
+
+function inferWorkloadFromRate(taskTemplate: string, quantity: number, productivityRate: number): CapacityEstimate['predictedWorkload'] {
+  const workerHours = quantity / productivityRate;
+  const strenuousTask = /steel|beam|scaffold|concrete|excavat|rebar/i.test(taskTemplate);
+
+  if (workerHours >= 16 || (strenuousTask && workerHours >= 10)) return 'High';
+  if (workerHours >= 6 || strenuousTask) return 'Medium';
+  return 'Low';
 }
 
 function getProductivityRate(taskTemplate: string) {

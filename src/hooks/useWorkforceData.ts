@@ -89,11 +89,7 @@ export function useWorkforceData() {
     unit: string;
     deadline: string;
     priority: string;
-    temperatureC?: number | null;
-    humidityPct?: number | null;
-    workload: string;
     notes?: string;
-    owner?: string;
   }) => {
     const response = await fetch('/api/tasks', {
       method: 'POST',
@@ -119,12 +115,29 @@ export function useWorkforceData() {
     return createdTask;
   };
 
+  const autoAssignTask = async (taskId: string) => {
+    const response = await fetch(`/api/tasks/${taskId}/auto-assign`, { method: 'PATCH' });
+    const payload = (await response.json()) as Task | { error?: string };
+
+    if (!response.ok || isTaskError(payload)) {
+      throw new Error('error' in payload ? payload.error ?? 'Unable to assign task' : 'Unable to assign task');
+    }
+
+    setData((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) => task.id === payload.id ? payload : task)
+    }));
+
+    return payload;
+  };
+
   return {
     ...data,
     loading,
     error,
     markNotificationRead,
-    createTask
+    createTask,
+    autoAssignTask
   };
 }
 

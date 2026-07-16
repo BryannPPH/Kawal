@@ -27,6 +27,7 @@ export type SchedulerRecommendation = {
   recommendedStartTime: string;
   estimatedCompletionTime: string;
   estimatedFinishTime: string;
+  predictedWorkload?: 'Low' | 'Medium' | 'High';
   selectedWorkerRecommendations: Array<{
     workerId: string;
     workerName: string;

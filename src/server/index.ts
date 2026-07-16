@@ -1,4 +1,4 @@
-import { authenticateUser, createTask, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
+import { authenticateUser, autoAssignTask, createTask, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
 import { estimateCapacity } from './capacityEstimator';
 import { forecastProductivity } from './chronosForecasting';
 import {
@@ -35,6 +35,7 @@ import {
 import { recommendWorkers } from './workerAssignmentEngine';
 import {
   assertSupabaseConfigured,
+  autoAssignSupabaseTask,
   authenticateSupabaseUser,
   createSupabaseTask,
   getDataSourceName,
@@ -336,11 +337,7 @@ const server = Bun.serve({
         unit?: string;
         deadline?: string;
         priority?: string;
-        temperatureC?: number;
-        humidityPct?: number;
-        workload?: string;
         notes?: string;
-        owner?: string;
       }>(request);
 
       if (
@@ -351,10 +348,9 @@ const server = Bun.serve({
         body.quantity <= 0 ||
         !body.unit?.trim() ||
         !body.deadline?.trim() ||
-        !body.priority?.trim() ||
-        !body.workload?.trim()
+        !body.priority?.trim()
       ) {
-        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, priority, and workload are required' }, { status: 400 });
+        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, and priority are required' }, { status: 400 });
       }
 
       const taskInput = {
@@ -365,14 +361,23 @@ const server = Bun.serve({
         unit: body.unit,
         deadline: body.deadline,
         priority: body.priority,
-        temperatureC: typeof body.temperatureC === 'number' ? body.temperatureC : null,
-        humidityPct: typeof body.humidityPct === 'number' ? body.humidityPct : null,
-        workload: body.workload,
-        notes: body.notes,
-        owner: body.owner
+        notes: body.notes
       };
 
       return jsonResponse(useSupabase ? await createSupabaseTask(taskInput) : await createTask(taskInput), { status: 201 });
+    }
+
+    const autoAssignTaskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/auto-assign$/);
+
+    if (request.method === 'PATCH' && autoAssignTaskMatch) {
+      try {
+        const task = useSupabase
+          ? await autoAssignSupabaseTask(autoAssignTaskMatch[1])
+          : await autoAssignTask(autoAssignTaskMatch[1]);
+        return task ? jsonResponse(task) : jsonResponse({ error: 'Task not found' }, { status: 404 });
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to assign task' }, { status: 409 });
+      }
     }
 
     if (request.method === 'GET' && url.pathname === '/api/notifications') {

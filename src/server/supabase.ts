@@ -2,8 +2,11 @@ import { notifications as fallbackNotifications, tasks as fallbackTasks, workers
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
 import type { IoTDevice, IncidentCenterData, IoTIncident, IoTOverview } from '../types/iot';
 import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
+import { estimateCapacity, inferWorkload } from './capacityEstimator';
+import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
 import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
 import type { Envelope } from './iot';
+import { recommendWorkers } from './workerAssignmentEngine';
 
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
@@ -70,8 +73,13 @@ export async function getSupabaseWorkforceData(): Promise<WorkforceData> {
 }
 
 export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> {
-  const workers = await getSupabaseWorkers();
-  const schedulerRecommendation = makeSchedulerPlaceholder(input, workers);
+  const [workers, environmentRows] = await Promise.all([
+    getSupabaseWorkers(),
+    selectRows<SupabaseEnvironmentRow>('environment_readings', `select=temperature_c,humidity_pct,recorded_at&zone_id=eq.${encodeFilterValue(input.zone)}&valid=eq.true&order=recorded_at.desc&limit=1`)
+  ]);
+  const environment = environmentRows[0] ?? null;
+  const workload = inferWorkload(input.taskTemplate, input.quantity);
+  const schedulerRecommendation = await makeSchedulerRecommendation({ ...input, workload }, workers, environment);
   const task: Task = {
     id: slugify(`${input.taskTemplate}-${Date.now()}`),
     title: input.taskTemplate.trim(),
@@ -84,6 +92,9 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
     unit: input.unit.trim(),
     deadline: input.deadline.trim(),
     priority: input.priority,
+    temperatureC: environment?.temperature_c ?? null,
+    humidityPct: environment?.humidity_pct ?? null,
+    workload,
     notes: input.notes?.trim() ?? '',
     schedulerRecommendation,
     status: 'Open',
@@ -93,6 +104,36 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
 
   const [row] = await insertRows<SupabaseTaskRow>('tasks', [taskToRow(task)]);
   return mapTask(row);
+}
+
+export async function autoAssignSupabaseTask(taskId: string): Promise<Task | null> {
+  const [row] = await selectRows<SupabaseTaskRow>('tasks', `select=*&id=eq.${encodeFilterValue(taskId)}&limit=1`);
+
+  if (!row) return null;
+
+  const task = mapTask(row);
+  const bestWorker = task.schedulerRecommendation.selectedWorkerRecommendations[0];
+
+  if (!bestWorker) {
+    throw new Error('No eligible worker is available for automatic assignment');
+  }
+
+  const [updatedRows] = await Promise.all([
+    patchRows<SupabaseTaskRow>('tasks', `id=eq.${encodeFilterValue(taskId)}`, { owner: bestWorker.workerName, status: 'Assigned' }),
+    patchRows('workers', `id=eq.${encodeFilterValue(bestWorker.workerId)}`, {
+      task: task.title,
+      status: 'working',
+      zone: task.zone,
+      workload: task.workload
+    }),
+    patchRows('iot_devices', `assigned_worker_id=eq.${encodeFilterValue(bestWorker.workerId)}`, {
+      assigned_task_id: task.id,
+      assigned_zone_id: task.zone,
+      updated_at: new Date().toISOString()
+    })
+  ]);
+
+  return updatedRows[0] ? mapTask(updatedRows[0]) : null;
 }
 
 export async function markSupabaseNotificationRead(notificationId: string): Promise<Notification | null> {
@@ -689,6 +730,7 @@ function mapWorker(row: SupabaseWorkerRow): Worker {
 }
 
 function mapTask(row: SupabaseTaskRow): Task {
+  const schedulerRecommendation = parseSchedulerRecommendation(row.scheduler_recommendation);
   return {
     id: row.id,
     title: row.title,
@@ -701,8 +743,11 @@ function mapTask(row: SupabaseTaskRow): Task {
     unit: row.unit,
     deadline: row.deadline || row.due,
     priority: row.priority,
+    temperatureC: null,
+    humidityPct: null,
+    workload: schedulerRecommendation.predictedWorkload ?? 'Medium',
     notes: row.notes,
-    schedulerRecommendation: parseSchedulerRecommendation(row.scheduler_recommendation),
+    schedulerRecommendation,
     status: row.status,
     due: row.due,
     tone: row.tone as Tone
@@ -775,34 +820,71 @@ function mapIncident(row: SupabaseIncidentRow): IoTIncident {
   };
 }
 
-function makeSchedulerPlaceholder(input: CreateTaskInput, availableWorkers: Worker[]): SchedulerRecommendation {
+async function makeSchedulerRecommendation(
+  input: CreateTaskInput & { workload: 'Low' | 'Medium' | 'High' },
+  availableWorkers: Worker[],
+  environment: SupabaseEnvironmentRow | null
+): Promise<SchedulerRecommendation> {
   const urgent = input.priority === 'High' || input.priority === 'Critical';
-  const workerCount = Math.max(1, Math.min(availableWorkers.length || 1, Math.ceil(input.quantity / (urgent ? 40 : 60))));
-  const candidateWorkers = availableWorkers
-    .slice()
-    .sort((left, right) => right.match - left.match)
-    .slice(0, workerCount)
+  const capacity = estimateCapacity({
+    taskTemplate: input.taskTemplate,
+    quantity: input.quantity,
+    deadline: input.deadline,
+    environment: {
+      temperatureC: environment?.temperature_c,
+      humidityPct: environment?.humidity_pct,
+      workload: input.workload
+    },
+    availableWorkerCount: availableWorkers.length
+  });
+  const workerCount = capacity.recommendedCrewSize;
+  const requiredPpeAndCertifications = ['Helmet', 'Safety shoes', 'High-vis vest', urgent ? 'Supervisor safety sign-off' : 'Standard toolbox briefing'];
+  const candidateWorkers = recommendWorkers({
+    taskTemplate: input.taskTemplate,
+    requiredSkills: [input.taskTemplate],
+    requiredCertifications: requiredPpeAndCertifications,
+    zone: input.zone,
+    recommendedCrewSize: workerCount,
+    workers: availableWorkers
+  })
     .map((worker) => ({
-      workerId: worker.id,
-      workerName: worker.name,
-      explanation: `${worker.role} has ${worker.match}% match and current fatigue score ${worker.fatigue}; placeholder scheduler ranks by match until optimizer rules are deployed.`
+      workerId: worker.workerId,
+      workerName: worker.workerName,
+      explanation: worker.explanation
     }));
+  const chronosForecast = await forecastProductivity({
+    historicalCompletedQuantity: [Math.max(1, Math.round(input.quantity * 0.72)), Math.max(1, Math.round(input.quantity * 0.86)), input.quantity],
+    workerHours: [capacity.totalWorkerHours * 0.9, capacity.totalWorkerHours, capacity.totalWorkerHours * 1.08],
+    breakMinutes: [0, input.workload === 'High' ? 10 : 5, input.workload === 'High' ? 15 : 5],
+    activeWorkers: [workerCount, workerCount, workerCount],
+    predictionLength: 4
+  }).catch((error) => chronosUnavailableForecast(error instanceof Error ? error.message : 'Chronos model request failed'));
 
   return {
+    totalWorkerHours: capacity.totalWorkerHours,
     recommendedWorkerCount: workerCount,
-    estimatedTaskDuration: urgent ? '2-4 hours placeholder estimate' : '1-3 hours placeholder estimate',
+    recommendedCrewSize: workerCount,
+    estimatedTaskDuration: capacity.estimatedDuration,
+    estimatedDuration: capacity.estimatedDuration,
     recommendedStartTime: urgent ? 'Next safe available window' : 'Next normal scheduling window',
-    estimatedCompletionTime: input.deadline,
+    estimatedCompletionTime: capacity.estimatedFinishTime,
+    estimatedFinishTime: capacity.estimatedFinishTime,
+    predictedWorkload: capacity.predictedWorkload,
     selectedWorkerRecommendations: candidateWorkers,
-    expectedProductivityRate: `${Math.max(1, Math.round(input.quantity / Math.max(workerCount, 1)))} ${input.unit} per worker placeholder`,
-    deadlineFeasibilityStatus: urgent ? 'Needs supervisor confirmation' : 'Likely feasible under placeholder rules',
-    requiredPpeAndCertifications: ['Helmet', 'Safety shoes', 'High-vis vest', urgent ? 'Supervisor safety sign-off' : 'Standard toolbox briefing'],
-    dependencyStatus: 'Placeholder assumes dependencies are clear; future scheduler will check task graph.',
-    currentEnvironmentalConditions: 'Placeholder reads latest Supabase telemetry when scheduler integration is deployed.',
+    assignmentEngineVersion: 'worker-assignment-engine-v1',
+    expectedProductivityRate: `${capacity.productivityRatePerWorkerHour} ${input.unit}/worker-hour`,
+    deadlineFeasibilityStatus: capacity.deadlineFeasibilityStatus,
+    capacityEstimatorVersion: capacity.estimatorVersion,
+    requiredPpeAndCertifications,
+    dependencyStatus: urgent ? `Supervisor clearance required before dispatch in ${input.zone}.` : `No blocking dependency inferred for ${input.zone}.`,
+    currentEnvironmentalConditions: environment
+      ? `IoT telemetry: ${environment.temperature_c ?? '-'}C, ${environment.humidity_pct ?? '-'}% humidity at ${environment.recorded_at}.`
+      : 'No current IoT telemetry for this zone; baseline capacity conditions are in use.',
     safetyAndOperationalWarnings: urgent
-      ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.']
-      : ['Confirm zone access before dispatch.'],
-    schedulerStatus: 'Placeholder scheduler result for the Supabase data source.'
+      ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.', ...capacity.warnings]
+      : ['Confirm zone access before dispatch.', ...capacity.warnings],
+    chronosForecast,
+    schedulerStatus: 'Live scheduler inference: capacity, worker assignment, IoT conditions, and Chronos-2 forecasting are recalculated from current data.'
   };
 }
 
@@ -905,6 +987,12 @@ type SupabaseTaskRow = {
   status: string;
   due: string;
   tone: string;
+};
+
+type SupabaseEnvironmentRow = {
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  recorded_at: string;
 };
 
 type SupabaseNotificationRow = {

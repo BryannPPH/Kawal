@@ -25,10 +25,15 @@ export class ChronosServiceError extends Error {
 }
 
 const chronosApiUrl = process.env.CHRONOS_API_URL ?? 'http://127.0.0.1:8001';
+const chronosRequestTimeoutMs = Number(process.env.CHRONOS_REQUEST_TIMEOUT_MS ?? 3000);
 
 export async function forecastProductivity(input: ChronosForecastInput): Promise<ChronosForecastOutput> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), chronosRequestTimeoutMs);
+
   const response = await fetch(`${chronosApiUrl}/forecast`, {
     method: 'POST',
+    signal: controller.signal,
     headers: {
       'Content-Type': 'application/json'
     },
@@ -40,8 +45,11 @@ export async function forecastProductivity(input: ChronosForecastInput): Promise
       prediction_length: input.predictionLength ?? 4
     })
   }).catch((error) => {
-    throw new ChronosServiceError(error instanceof Error ? error.message : 'Chronos model request failed');
-  });
+    const message = error instanceof Error && error.name === 'AbortError'
+      ? `Chronos model did not respond within ${chronosRequestTimeoutMs}ms`
+      : error instanceof Error ? error.message : 'Chronos model request failed';
+    throw new ChronosServiceError(message);
+  }).finally(() => clearTimeout(timeout));
 
   const payload = await response.json().catch(() => ({}));
 
