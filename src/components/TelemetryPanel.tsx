@@ -17,10 +17,10 @@ const metrics = [
 
 export function TelemetryPanel({ reading, onSimulate, onReset }: TelemetryPanelProps) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
+    <section className="rounded-lg border border-white bg-white p-4 shadow-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Gauge size={18} className="text-sky-700" />
+          <Gauge size={18} className="text-[#FD7124]" />
           <h2 className="text-sm font-semibold text-slate-900">Telemetry Adapter</h2>
         </div>
         <div className="flex items-center gap-2">
@@ -29,7 +29,7 @@ export function TelemetryPanel({ reading, onSimulate, onReset }: TelemetryPanelP
             aria-label="Simulate telemetry"
             title="Simulate telemetry"
             onClick={onSimulate}
-            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50"
+            className="grid h-9 w-9 place-items-center rounded-md border border-[#FAA745] bg-[#FFEFE6] text-[#9f3308] hover:bg-[#faa745]/20"
           >
             <Shuffle size={17} />
           </button>
@@ -38,7 +38,7 @@ export function TelemetryPanel({ reading, onSimulate, onReset }: TelemetryPanelP
             aria-label="Reset state"
             title="Reset state"
             onClick={onReset}
-            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50"
+            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-[#F1F2F7]"
           >
             <RotateCcw size={17} />
           </button>
@@ -47,7 +47,7 @@ export function TelemetryPanel({ reading, onSimulate, onReset }: TelemetryPanelP
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {metrics.map(([key, label, unit]) => (
-          <div key={key} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div key={key} className="rounded-md border border-slate-200 bg-[#F1F2F7] p-3">
             <div className="text-xs font-medium text-slate-500">{label}</div>
             <div className="mt-1 flex items-baseline gap-1">
               <span className="text-xl font-bold text-slate-950">{reading[key]}</span>

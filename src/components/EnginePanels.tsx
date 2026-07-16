@@ -10,8 +10,8 @@ type EnginePanelsProps = {
 
 const badgeStyles = {
   low: 'bg-emerald-100 text-emerald-800',
-  medium: 'bg-amber-100 text-amber-900',
-  high: 'bg-orange-100 text-orange-900',
+  medium: 'bg-[#FFEFE6] text-[#8a4b02]',
+  high: 'bg-[#FFEFE6] text-[#9f3308]',
   critical: 'bg-rose-100 text-rose-900'
 };
 
@@ -20,9 +20,9 @@ export function EnginePanels({ zones, risks, interventions, inspections }: Engin
 
   return (
     <div className="grid gap-4 xl:grid-cols-3">
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
+      <section className="rounded-lg border border-white bg-white p-4 shadow-panel">
         <div className="mb-3 flex items-center gap-2">
-          <ShieldAlert size={18} className="text-rose-700" />
+          <ShieldAlert size={18} className="text-[#FD7124]" />
           <h2 className="text-sm font-semibold text-slate-900">Risk Engine</h2>
         </div>
         <div className="space-y-3">
@@ -32,8 +32,8 @@ export function EnginePanels({ zones, risks, interventions, inspections }: Engin
                 <span className="font-medium text-slate-900">{zoneName.get(risk.zoneId)}</span>
                 <span className={`rounded px-2 py-1 text-xs font-semibold ${badgeStyles[risk.level]}`}>{risk.level}</span>
               </div>
-              <div className="mt-2 h-2 rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-sky-600" style={{ width: `${risk.score}%` }} />
+              <div className="mt-2 h-2 rounded-full bg-[#F1F2F7]">
+                <div className="h-2 rounded-full bg-[#FD7124]" style={{ width: `${risk.score}%` }} />
               </div>
               <p className="mt-2 text-xs text-slate-500">{risk.drivers[0]}</p>
             </div>
@@ -41,9 +41,9 @@ export function EnginePanels({ zones, risks, interventions, inspections }: Engin
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
+      <section className="rounded-lg border border-white bg-white p-4 shadow-panel">
         <div className="mb-3 flex items-center gap-2">
-          <Route size={18} className="text-sky-700" />
+          <Route size={18} className="text-[#FD7124]" />
           <h2 className="text-sm font-semibold text-slate-900">Intervention Optimizer</h2>
         </div>
         <div className="space-y-3">
@@ -59,9 +59,9 @@ export function EnginePanels({ zones, risks, interventions, inspections }: Engin
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
+      <section className="rounded-lg border border-white bg-white p-4 shadow-panel">
         <div className="mb-3 flex items-center gap-2">
-          <ClipboardCheck size={18} className="text-emerald-700" />
+          <ClipboardCheck size={18} className="text-[#FD7124]" />
           <h2 className="text-sm font-semibold text-slate-900">Inspection Engine</h2>
         </div>
         <div className="space-y-3">

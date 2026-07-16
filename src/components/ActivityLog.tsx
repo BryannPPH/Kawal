@@ -6,17 +6,17 @@ type ActivityLogProps = {
 };
 
 const kindStyles = {
-  telemetry: 'bg-sky-100 text-sky-800',
+  telemetry: 'bg-[#FFEFE6] text-[#9f3308]',
   risk: 'bg-rose-100 text-rose-900',
-  intervention: 'bg-indigo-100 text-indigo-900',
+  intervention: 'bg-[#F1F2F7] text-slate-800',
   inspection: 'bg-emerald-100 text-emerald-900'
 };
 
 export function ActivityLog({ activity }: ActivityLogProps) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
+    <section className="rounded-lg border border-white bg-white p-4 shadow-panel">
       <div className="mb-3 flex items-center gap-2">
-        <History size={18} className="text-slate-700" />
+        <History size={18} className="text-[#FD7124]" />
         <h2 className="text-sm font-semibold text-slate-900">Activity Logger</h2>
       </div>
       <div className="space-y-3">
