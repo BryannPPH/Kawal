@@ -119,15 +119,39 @@ export function useWorkforceData() {
     return createdTask;
   };
 
+  const assignTaskToWorker = async (taskId: string, workerId: string) => {
+    const response = await fetch(`/api/tasks/${taskId}/assign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ workerId })
+    });
+
+    const payload = (await response.json()) as WorkforceData | { error?: string };
+
+    if (!response.ok || isWorkforceError(payload)) {
+      throw new Error('error' in payload ? payload.error ?? 'Unable to assign task' : 'Unable to assign task');
+    }
+
+    setData(payload);
+    return payload;
+  };
+
   return {
     ...data,
     loading,
     error,
     markNotificationRead,
-    createTask
+    createTask,
+    assignTaskToWorker
   };
 }
 
 function isTaskError(payload: Task | { error?: string }): payload is { error?: string } {
+  return 'error' in payload;
+}
+
+function isWorkforceError(payload: WorkforceData | { error?: string }): payload is { error?: string } {
   return 'error' in payload;
 }

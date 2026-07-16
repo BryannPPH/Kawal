@@ -662,6 +662,53 @@ export async function createTask(input: {
   return task;
 }
 
+export async function assignTaskToWorker(taskId: string, workerId: string): Promise<WorkforceData> {
+  const worker = getWorkers().find((item) => item.id === workerId);
+  const taskRow = db.query<TaskRow, [string]>('SELECT * FROM tasks WHERE id = ?').get(taskId);
+
+  if (!worker) {
+    throw new Error('Worker not found');
+  }
+
+  if (!taskRow) {
+    throw new Error('Task not found');
+  }
+
+  const taskTitle = taskRow.task_template || taskRow.title;
+  const taskZone = taskRow.zone || taskRow.location || worker.zone;
+  const taskWorkload = taskRow.task_workload || worker.workload;
+  const taskTone: Tone = taskRow.priority === 'Critical' ? 'danger' : taskRow.priority === 'High' ? 'warning' : 'neutral';
+
+  db.prepare(`
+    UPDATE tasks
+    SET owner = ?, status = ?, due = ?, tone = ?
+    WHERE id = ?
+  `).run(worker.name, 'Assigned', 'Waiting accept', taskTone, taskId);
+
+  db.prepare(`
+    UPDATE workers
+    SET task = ?, status = ?, zone = ?, workload = ?
+    WHERE id = ?
+  `).run(taskTitle, 'waiting', taskZone, taskWorkload, workerId);
+
+  db.prepare(`
+    UPDATE iot_devices
+    SET assigned_worker_id = ?, assigned_zone_id = ?, assigned_task_id = ?, updated_at = ?
+    WHERE assigned_worker_id = ?
+  `).run(workerId, taskZone, taskId, new Date().toISOString(), workerId);
+
+  createNotification({
+    title: 'New assignment',
+    detail: `${taskTitle} assigned to ${worker.name} in ${taskZone}.`,
+    tone: 'warning',
+    targetLabel: 'Open worker task',
+    targetSection: 'workers',
+    targetWorkerId: workerId
+  });
+
+  return getWorkforceData();
+}
+
 export function getNotifications(): Notification[] {
   return db.query<NotificationRow, []>('SELECT * FROM notifications ORDER BY rowid').all().map(mapNotification);
 }
@@ -692,6 +739,22 @@ function mapNotification(row: NotificationRow): Notification {
     targetWorkerId: row.target_worker_id ?? undefined,
     read: Boolean(row.read)
   };
+}
+
+function createNotification(input: Omit<Notification, 'id' | 'read'>) {
+  db.prepare(`
+    INSERT INTO notifications (
+      id, title, detail, tone, target_label, target_section, target_worker_id, read
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+  `).run(
+    `manager-action-${crypto.randomUUID()}`,
+    input.title,
+    input.detail,
+    input.tone,
+    input.targetLabel,
+    input.targetSection,
+    input.targetWorkerId ?? null
+  );
 }
 
 function hashPassword(password: string) {

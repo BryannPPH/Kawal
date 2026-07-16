@@ -29,7 +29,7 @@ type SearchResult = {
 };
 
 export function ManagerPage({ onLogout }: ManagerPageProps) {
-  const { workers, tasks, notifications, loading, error, markNotificationRead, createTask } = useWorkforceData();
+  const { workers, tasks, notifications, loading, error, markNotificationRead, createTask, assignTaskToWorker } = useWorkforceData();
   const [selectedWorkerId, setSelectedWorkerId] = useState('budi');
   const [activeSection, setActiveSection] = useState<ManagerSection>(() => getManagerSectionFromPath(window.location.pathname));
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -49,9 +49,15 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const [taskNotes, setTaskNotes] = useState('');
   const [taskOwner, setTaskOwner] = useState('');
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [assignmentBusy, setAssignmentBusy] = useState<string | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const activeMeta = managerSectionMeta[activeSection];
   const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId) ?? workers[0];
   const unreadNotifications = notifications.filter((notification) => !notification.read);
+  const recommendedTask = useMemo(() => {
+    const exactZoneOpenTask = tasks.find((task) => task.status === 'Open' && task.owner === 'Unassigned' && selectedWorker?.zone && task.zone === selectedWorker.zone);
+    return exactZoneOpenTask ?? tasks.find((task) => task.status === 'Open' && task.owner === 'Unassigned') ?? tasks.find((task) => task.status === 'Open') ?? tasks[0];
+  }, [selectedWorker?.zone, tasks]);
   const searchResults = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
 
@@ -208,13 +214,47 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     }
   };
 
+  const assignSelectedTask = async (taskId: string, workerId = selectedWorker?.id) => {
+    if (!workerId) {
+      return;
+    }
+
+    setAssignmentBusy(taskId);
+    setAssignmentError(null);
+
+    try {
+      await assignTaskToWorker(taskId, workerId);
+      const assignedWorker = workers.find((worker) => worker.id === workerId);
+
+      if (assignedWorker) {
+        setSelectedWorkerId(assignedWorker.id);
+      }
+
+      selectSection('tasks');
+    } catch (caughtError) {
+      setAssignmentError(caughtError instanceof Error ? caughtError.message : 'Unable to assign task');
+    } finally {
+      setAssignmentBusy(null);
+    }
+  };
+
   const renderSection = () => {
     if (activeSection === 'workers') {
       return <WorkersView workers={workers} selectedWorker={selectedWorker} onSelectWorker={(worker) => setSelectedWorkerId(worker.id)} />;
     }
 
     if (activeSection === 'tasks') {
-      return <TasksView tasks={tasks} />;
+      return (
+        <TasksView
+          tasks={tasks}
+          workers={workers}
+          selectedWorker={selectedWorker}
+          assignmentBusy={assignmentBusy}
+          assignmentError={assignmentError}
+          onSelectWorker={(worker) => setSelectedWorkerId(worker.id)}
+          onAssignTask={assignSelectedTask}
+        />
+      );
     }
 
     if (activeSection === 'payroll') {
@@ -235,6 +275,10 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
         tasks={tasks}
         selectedWorker={selectedWorker}
         onSelectWorker={(worker) => setSelectedWorkerId(worker.id)}
+        recommendedTask={recommendedTask}
+        assignmentBusy={assignmentBusy}
+        assignmentError={assignmentError}
+        onAssignTask={assignSelectedTask}
       />
     );
   };
