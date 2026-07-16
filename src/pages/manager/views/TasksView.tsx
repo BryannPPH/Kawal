@@ -1,5 +1,5 @@
 import { CalendarClock, ClipboardCheck, ClipboardList, Clock, InfoIcon, UserCheck, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pill } from '../../../components/ui/Pill';
 import { toneStyles } from '../../../constants/workforce';
 import type { Task } from '../../../types/workforce';
@@ -10,12 +10,18 @@ export function TasksView({ tasks, onAutoAssign }: { tasks: Task[]; onAutoAssign
   const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const readyReviewCount = tasks.filter((task) => task.status.toLowerCase().includes('review')).length;
   const safetyOpenCount = tasks.filter((task) => ['high', 'critical'].includes(task.priority.toLowerCase())).length;
   const assignedCount = tasks.filter((task) => task.owner !== 'Unassigned').length;
   const assignedPct = tasks.length ? Math.round((assignedCount / tasks.length) * 100) : 0;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const assignTask = async (taskId: string) => {
     setAssigningTaskId(taskId);
@@ -89,7 +95,7 @@ export function TasksView({ tasks, onAutoAssign }: { tasks: Task[]; onAutoAssign
                   </div>
                   <div className="flex items-center gap-2 text-sm font-semibold text-[#5F5A56]">
                     <CalendarClock size={16} className="text-[#FAA745]" />
-                    <span>Due {task.deadline}</span>
+                    <span>{formatDueCountdown(task, now)}</span>
                   </div>
                   <button
                     type="button"
@@ -250,4 +256,75 @@ function formatFinishTime(value: string) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(date);
+}
+
+function formatDueCountdown(task: Task, now: Date) {
+  const deadline = parseDeadline(task.deadline);
+
+  if (!deadline) {
+    const legacyDuration = normalizeLegacyDuration(task.deadline || task.due);
+
+    if (legacyDuration) {
+      return `Due in ${legacyDuration}`;
+    }
+
+    return task.status.toLowerCase().includes('review') ? 'Ready for review' : 'No deadline';
+  }
+
+  const diffMs = deadline.getTime() - now.getTime();
+  const duration = formatRelativeDuration(Math.abs(diffMs));
+
+  if (Math.abs(diffMs) < 60_000) {
+    return 'Due now';
+  }
+
+  return diffMs > 0 ? `Due in ${duration}` : `Overdue by ${duration}`;
+}
+
+function parseDeadline(value: string) {
+  if (!value || normalizeLegacyDuration(value)) {
+    return null;
+  }
+
+  const deadline = new Date(value);
+  return Number.isNaN(deadline.getTime()) ? null : deadline;
+}
+
+function normalizeLegacyDuration(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const durationPattern = /^((\d+)\s*d)?\s*((\d+)\s*h)?\s*((\d+)\s*m)?$/i;
+  const match = trimmed.match(durationPattern);
+
+  if (!match || !/[dhm]/i.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed.replace(/\s+/g, ' ');
+}
+
+function formatRelativeDuration(milliseconds: number) {
+  const totalMinutes = Math.max(1, Math.round(milliseconds / 60_000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+
+  if (days) {
+    parts.push(`${days}d`);
+  }
+
+  if (hours) {
+    parts.push(`${hours}h`);
+  }
+
+  if (!days && minutes) {
+    parts.push(`${minutes}m`);
+  }
+
+  return parts.join(' ') || '1m';
 }
