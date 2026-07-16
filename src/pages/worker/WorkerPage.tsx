@@ -90,6 +90,7 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
   const [ppeModalOpen, setPpeModalOpen] = useState(false);
   const [ppeBusy, setPpeBusy] = useState(false);
   const [ppeError, setPpeError] = useState<string | null>(null);
+  const [ppeCapturedImage, setPpeCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [hazardType, setHazardType] = useState(hazardTypes[0]);
@@ -233,19 +234,23 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
       return;
     }
 
+    setPpeCapturedImage(imageDataUrl);
     setPpeBusy(true);
     setPpeError(null);
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/workers/${workerId}/ppe-check`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ imageDataUrl })
-      });
+      const [response] = await Promise.all([
+        fetch(`/api/workers/${workerId}/ppe-check`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ imageDataUrl })
+        }),
+        wait(2600)
+      ]);
       const payload = (await response.json()) as WorkerAppData | { error?: string };
 
       if (!response.ok || 'error' in payload) {
@@ -261,6 +266,7 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
       }
 
       setPpeModalOpen(false);
+      setPpeCapturedImage(null);
       await runAction('status', { body: JSON.stringify({ status: 'working' }) }, 'PPE verified. Shift started.');
     } catch (caughtError) {
       setPpeError(caughtError instanceof Error ? caughtError.message : 'PPE check failed');
@@ -408,12 +414,20 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
           <PpeCameraModal
             busy={ppeBusy}
             error={ppeError}
+            capturedImage={ppeCapturedImage}
             onClose={() => {
               if (!ppeBusy) {
                 setPpeModalOpen(false);
+                setPpeCapturedImage(null);
               }
             }}
             onCapture={submitPpeImage}
+            onRetake={() => {
+              if (!ppeBusy) {
+                setPpeCapturedImage(null);
+                setPpeError(null);
+              }
+            }}
           />
         ) : null}
 
@@ -744,13 +758,17 @@ function SosOverlay({ stage, workerName, zone }: { stage: SosStage; workerName: 
 function PpeCameraModal({
   busy,
   error,
+  capturedImage,
   onClose,
-  onCapture
+  onCapture,
+  onRetake
 }: {
   busy: boolean;
   error: string | null;
+  capturedImage: string | null;
   onClose: () => void;
   onCapture: (imageDataUrl: string) => void;
+  onRetake: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -839,6 +857,76 @@ function PpeCameraModal({
     onCapture(canvas.toDataURL('image/jpeg', 0.78));
   };
 
+  if (capturedImage) {
+    return (
+      <div className="absolute inset-0 z-50 grid place-items-center bg-[#FFFDFB]/82 px-5 backdrop-blur-sm">
+        <div className="w-full max-w-[340px] rounded-[1.5rem] border border-[#F3D7C8] bg-white p-4 text-[#2F2C2A] shadow-[0_24px_70px_rgba(76,48,35,0.22)]">
+          <img
+            src={capturedImage}
+            alt="Captured PPE verification frame"
+            className="max-h-[360px] w-full rounded-2xl object-cover"
+          />
+          <div className="mt-4 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+            <div className="flex items-center gap-3">
+              {busy ? (
+                <span className="h-7 w-7 shrink-0 rounded-full border-2 border-[#F3D7C8] border-t-[#FD7124] animate-spin" />
+              ) : (
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#FD7124] text-white">
+                  <Camera size={14} />
+                </span>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-[#2F2C2A]">{busy ? ppeScanSteps[scanStep] : 'Captured image ready'}</p>
+                <p className="mt-1 text-xs text-[#776B63]">{busy ? 'Analyzing helmet and harness' : 'Retake or verify this frame'}</p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2">
+              {ppeScanSteps.map((step, index) => (
+                <div key={step} className="flex items-center gap-2">
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      index < scanStep
+                        ? 'bg-[#FD7124]'
+                        : index === scanStep && busy
+                          ? 'bg-[#FD7124] shadow-[0_0_12px_rgba(253,113,36,0.65)] animate-pulse'
+                          : 'bg-[#D9C5B9]'
+                    }`}
+                  />
+                  <span className={`text-xs font-medium ${index <= scanStep && busy ? 'text-[#2F2C2A]' : 'text-[#776B63]'}`}>{step}</span>
+                  {index === scanStep && busy ? (
+                    <span className="ml-auto h-3.5 w-3.5 rounded-full border-2 border-[#F3D7C8] border-t-[#FD7124] animate-spin" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+          {cameraError || error ? (
+            <p className="mt-3 rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error ?? cameraError}</p>
+          ) : null}
+          {!busy ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onRetake}
+                className="inline-flex h-11 items-center justify-center rounded-md border border-[#F3D7C8] bg-white text-sm font-bold text-[#3D3835] transition hover:bg-[#FFF8F4]"
+              >
+                Retake
+              </button>
+              <button
+                type="button"
+                onClick={() => onCapture(capturedImage)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18]"
+              >
+                <Camera size={16} />
+                Verify
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-0 z-50 flex flex-col bg-[#111111] text-white">
       <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-14">
@@ -864,7 +952,7 @@ function PpeCameraModal({
         <div className="pointer-events-none absolute left-1/2 top-8 w-[68%] -translate-x-1/2 rounded-full border border-white/35 px-3 py-2 text-center text-xs font-bold text-white/85">
           Face camera. Show helmet and harness straps.
         </div>
-        {busy ? (
+        {busy && !capturedImage ? (
           <div className="absolute inset-0 grid place-items-center bg-black/45 px-6 backdrop-blur-[1px]">
             <div className="w-full rounded-2xl border border-white/20 bg-[#111111]/80 p-4 text-white shadow-[0_18px_52px_rgba(0,0,0,0.35)]">
               <div className="flex items-center gap-3">
@@ -873,7 +961,7 @@ function PpeCameraModal({
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-bold">{ppeScanSteps[scanStep]}</p>
-                  <p className="mt-1 text-xs text-white/65">Keep helmet and harness visible</p>
+                  <p className="mt-1 text-xs text-white/65">Analyzing captured PPE image</p>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-4 gap-2">
@@ -907,7 +995,7 @@ function PpeCameraModal({
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Camera size={18} />
-          {busy ? 'Verifying PPE...' : 'Capture & Verify'}
+          Capture & Verify
         </button>
       </div>
     </div>
@@ -963,4 +1051,10 @@ function vibrateSos() {
   };
 
   navigatorWithVibration.vibrate?.([180, 80, 180, 80, 360]);
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
 }
