@@ -47,7 +47,7 @@ export function IncidentCenterView() {
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-lg border border-[#F3D7C8] bg-white">
+      <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
         <div className="grid xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="p-6 sm:p-7">
             <p className="text-sm font-semibold text-[#C95119]">Incident Center</p>
@@ -60,7 +60,7 @@ export function IncidentCenterView() {
               <CenterStat label="Near miss" value={data.nearMissReports.length} tone="warning" />
               <CenterStat label="History" value={data.incidentHistory.length} tone="neutral" />
             </div>
-            <div className="mt-5 rounded-lg bg-white p-4">
+            <div className="mt-5 rounded-2xl bg-white p-4">
               <div className="flex items-center gap-3">
                 <span className={`h-3 w-3 rounded-full ${data.activeIncidents.length ? 'bg-[#CF5A4F]' : 'bg-[#55936A]'}`} />
                 <p className="text-sm font-semibold text-[#2F2C2A]">{data.activeIncidents.length ? 'Action needed' : 'No active SOS'}</p>
@@ -71,10 +71,10 @@ export function IncidentCenterView() {
         </div>
       </section>
 
-      {error ? <p className="rounded-md bg-[#FFF4DC] px-3 py-2 text-sm font-semibold text-[#8A4B02]">Incident Center API unavailable: {error}</p> : null}
+      {error ? <p className="rounded-xl bg-[#FFF4DC] px-3 py-2 text-sm font-semibold text-[#8A4B02]">Incident Center API unavailable: {error}</p> : null}
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+        <div className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#2F2C2A]">Active SOS Alerts</p>
@@ -94,7 +94,7 @@ export function IncidentCenterView() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+        <div className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#2F2C2A]">Near-Miss Reports</p>
@@ -106,7 +106,7 @@ export function IncidentCenterView() {
           <div className="mt-5 space-y-3">
             {data.nearMissReports.length ? (
               data.nearMissReports.map((report) => (
-                <div key={report.id} className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+                <div key={report.id} className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-[#2F2C2A]">{report.worker_id ?? report.device_id}</p>
                     <Pill className="bg-[#FFEFE6] text-[#B84011]">{report.fall_candidate ? 'Fall candidate' : 'Impact'}</Pill>
@@ -122,7 +122,7 @@ export function IncidentCenterView() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Emergency History</p>
@@ -134,7 +134,7 @@ export function IncidentCenterView() {
         <div className="mt-5 space-y-3">
           {data.incidentHistory.length ? (
             data.incidentHistory.map((incident) => (
-              <div key={incident.id} className="grid gap-3 rounded-lg border border-[#F3D7C8] p-4 md:grid-cols-[minmax(0,1fr)_150px_130px] md:items-center">
+              <div key={incident.id} className="grid gap-3 rounded-2xl border border-[#F3D7C8] p-4 md:grid-cols-[minmax(0,1fr)_150px_130px] md:items-center">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[#2F2C2A]">{incident.trigger_source}</p>
                   <p className="mt-1 text-sm text-[#776B63]">{incident.worker_id} / {incident.zone_id ?? 'Unknown zone'}</p>
@@ -160,7 +160,7 @@ function CenterStat({ label, value, tone }: { label: string; value: number; tone
   }[tone];
 
   return (
-    <div className={`rounded-lg p-4 text-center ${styles}`}>
+    <div className={`rounded-2xl p-4 text-center ${styles}`}>
       <p className="text-3xl font-semibold">{value}</p>
       <p className="mt-1 text-xs font-semibold">{label}</p>
     </div>
@@ -175,7 +175,7 @@ function IncidentCard({
   onAction: (incidentId: string, action: 'acknowledge' | 'escalate' | 'resolve') => void;
 }) {
   return (
-    <div className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-5">
+    <div className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -196,7 +196,7 @@ function IncidentCard({
 }
 
 function EmptyState({ loading, text }: { loading: boolean; text: string }) {
-  return <p className="rounded-md bg-[#FFF8F4] px-3 py-3 text-sm text-[#776B63]">{loading ? 'Loading...' : text}</p>;
+  return <p className="rounded-xl bg-[#FFF8F4] px-3 py-3 text-sm text-[#776B63]">{loading ? 'Loading...' : text}</p>;
 }
 
 function formatTime(value: string) {

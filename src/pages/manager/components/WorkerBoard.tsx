@@ -18,7 +18,7 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerB
   }));
 
   return (
-    <section className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+    <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-[#2F2C2A]">Worker Dispatch</p>
@@ -30,7 +30,7 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerB
               key={item}
               type="button"
               onClick={() => setFilter(item)}
-              className={`h-9 rounded-md px-3 text-sm font-semibold transition ${
+              className={`h-9 rounded-xl px-3 text-sm font-semibold transition ${
                 filter === item ? 'bg-[#FD7124] text-white' : 'border border-[#F3D7C8] bg-white text-[#5F5A56] hover:bg-[#FFEFE6]'
               }`}
             >
@@ -49,7 +49,7 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerB
               key={status}
               type="button"
               onClick={() => setFilter(status)}
-              className={`rounded-lg border p-3 text-left transition ${
+              className={`rounded-2xl border p-3 text-left transition ${
                 filter === status ? 'border-[#FD7124] bg-[#FFEFE6]' : 'border-[#F3D7C8] bg-[#FFF8F4] hover:bg-[#FFEFE6]'
               }`}
             >

@@ -7,7 +7,7 @@ export function TaskPanel({ tasks }: { tasks: Task[] }) {
   const reviewTasks = tasks.filter((task) => task.status.toLowerCase().includes('review')).length;
 
   return (
-    <section className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+    <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[#2F2C2A]">Task Shape</p>
@@ -27,7 +27,7 @@ export function TaskPanel({ tasks }: { tasks: Task[] }) {
           const workloadWidth = workload === 'High' ? 88 : workload === 'Medium' ? 58 : 34;
 
           return (
-            <div key={task.id} className="rounded-lg border border-[#F3D7C8] p-4">
+            <div key={task.id} className="rounded-2xl border border-[#F3D7C8] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.taskTemplate}</p>
@@ -54,7 +54,7 @@ export function TaskPanel({ tasks }: { tasks: Task[] }) {
 
 function MiniStat({ label, value, tone }: { label: string; value: number; tone: 'orange' | 'green' }) {
   return (
-    <div className={`mb-4 rounded-lg p-4 ${tone === 'orange' ? 'bg-[#FFEFE6]' : 'bg-[#EAF5ED]'}`}>
+    <div className={`mb-4 rounded-2xl p-4 ${tone === 'orange' ? 'bg-[#FFEFE6]' : 'bg-[#EAF5ED]'}`}>
       <p className="text-xs font-semibold text-[#776B63]">{label}</p>
       <p className={`mt-2 text-2xl font-semibold ${tone === 'orange' ? 'text-[#C95119]' : 'text-[#55936A]'}`}>{value}</p>
     </div>

@@ -20,7 +20,7 @@ export function Button({ children, onClick, variant = 'secondary', className = '
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-65 ${styles[variant]} ${className}`}
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold shadow-[0_8px_20px_rgba(76,48,35,0.06)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0 ${styles[variant]} ${className}`}
     >
       {children}
     </button>

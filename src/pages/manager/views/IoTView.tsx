@@ -46,7 +46,7 @@ export function IoTView() {
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-lg border border-[#F3D7C8] bg-white">
+      <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
         <div className="grid xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="p-6 sm:p-7">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -60,7 +60,7 @@ export function IoTView() {
                 Refresh
               </Button>
             </div>
-            {error ? <p className="mt-5 rounded-md bg-[#FFF4DC] px-3 py-2 text-sm font-semibold text-[#8A4B02]">API unavailable: {error}</p> : null}
+            {error ? <p className="mt-5 rounded-xl bg-[#FFF4DC] px-3 py-2 text-sm font-semibold text-[#8A4B02]">API unavailable: {error}</p> : null}
           </div>
 
           <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-6 xl:border-l xl:border-t-0">
@@ -107,13 +107,13 @@ export function IoTView() {
         <StatusTile icon={AlertTriangle} label="Offline IoT" value={String(overview.devices.length - onlineDevices)} detail="Assigned devices needing check" tone={onlineDevices === overview.devices.length ? 'success' : 'warning'} />
       </section>
 
-      <section className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Worker IoT Signals</p>
             <p className="mt-1 text-sm text-[#776B63]">Only rest requests and SOS signals from each person&apos;s assigned IoT device.</p>
           </div>
-          <span className="rounded-md bg-[#FFEFE6] px-3 py-1 text-xs font-semibold text-[#C95119]">5s polling</span>
+          <span className="rounded-xl bg-[#FFEFE6] px-3 py-1 text-xs font-semibold text-[#C95119]">5s polling</span>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -136,7 +136,7 @@ function SignalBubble({ label, value, tone }: { label: string; value: number; to
   }[tone];
 
   return (
-    <div className={`grid h-24 flex-1 place-items-center rounded-lg ${style}`}>
+    <div className={`grid h-24 flex-1 place-items-center rounded-2xl ${style}`}>
       <div className="text-center">
         <p className="text-3xl font-semibold">{value}</p>
         <p className="mt-1 text-xs font-semibold">{label}</p>
@@ -166,9 +166,9 @@ function StatusTile({
   }[tone];
 
   return (
-    <div className="rounded-lg border border-[#F3D7C8] bg-white/75 p-4">
+    <div className="rounded-2xl border border-[#F3D7C8] bg-white/75 p-4">
       <div className="flex items-center justify-between gap-3">
-        <span className={`grid h-10 w-10 place-items-center rounded-lg ${toneClass}`}>
+        <span className={`grid h-10 w-10 place-items-center rounded-2xl ${toneClass}`}>
           <Icon size={18} />
         </span>
         {tone === 'success' ? <CheckCircle2 size={17} className="text-[#9A5719]" /> : tone === 'danger' ? <AlertTriangle size={17} className="text-[#B84011]" /> : null}
@@ -187,10 +187,10 @@ function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: I
   const hasSignal = Boolean(sos || rest);
 
   return (
-    <div className="rounded-lg border border-[#F3D7C8] bg-white p-5">
+    <div className="rounded-2xl border border-[#F3D7C8] bg-white p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={`grid h-10 w-10 place-items-center rounded-lg ${device.status === 'ONLINE' ? 'bg-[#FFEFE6] text-[#FD7124]' : 'bg-[#F1F2F7] text-[#776B63]'}`}>
+          <span className={`grid h-10 w-10 place-items-center rounded-2xl ${device.status === 'ONLINE' ? 'bg-[#FFEFE6] text-[#FD7124]' : 'bg-[#F1F2F7] text-[#776B63]'}`}>
             {device.status === 'ONLINE' ? <Radio size={18} /> : <WifiOff size={18} />}
           </span>
           <div>
@@ -203,14 +203,14 @@ function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: I
         </span>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <div className={`rounded-md px-4 py-4 ${sos ? 'bg-[#FFEFE6]' : 'bg-[#FFF8F4]'}`}>
+        <div className={`rounded-xl px-4 py-4 ${sos ? 'bg-[#FFEFE6]' : 'bg-[#FFF8F4]'}`}>
           <div className="flex items-center gap-2">
             <ShieldAlert size={15} className={sos ? 'text-[#B84011]' : 'text-[#A09188]'} />
             <p className="text-xs font-semibold text-[#2F2C2A]">SOS Signal</p>
           </div>
           <p className="mt-2 text-sm text-[#776B63]">{sos ? `${sos.state} at ${formatTime(sos.opened_at)}` : 'No SOS signal'}</p>
         </div>
-        <div className={`rounded-md px-4 py-4 ${rest ? 'bg-[#FFF4DC]' : 'bg-[#FFF8F4]'}`}>
+        <div className={`rounded-xl px-4 py-4 ${rest ? 'bg-[#FFF4DC]' : 'bg-[#FFF8F4]'}`}>
           <div className="flex items-center gap-2">
             <TimerReset size={15} className={rest ? 'text-[#8A4B02]' : 'text-[#A09188]'} />
             <p className="text-xs font-semibold text-[#2F2C2A]">Rest Request</p>
@@ -219,7 +219,7 @@ function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: I
         </div>
       </div>
       {sos || rest ? (
-        <div className="mt-3 rounded-md border border-[#F3D7C8] bg-[#FFF8F4] px-3 py-2">
+        <div className="mt-3 rounded-xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 py-2">
           {sos ? <p className="text-xs font-semibold text-[#B84011]">Incident Center handles acknowledgement, escalation, and resolution.</p> : null}
           {rest ? <p className="text-xs font-semibold text-[#8A4B02]">Incident Center handles rest request review.</p> : null}
         </div>
@@ -229,7 +229,7 @@ function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: I
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <p className="rounded-md bg-[#FFF8F4] px-3 py-3 text-sm text-[#776B63]">{text}</p>;
+  return <p className="rounded-xl bg-[#FFF8F4] px-3 py-3 text-sm text-[#776B63]">{text}</p>;
 }
 
 function formatTime(value: string) {

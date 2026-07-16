@@ -12,7 +12,7 @@ export function AssignmentPanel({ selectedWorker, onSelectWorker }: AssignmentPa
   const [approved, setApproved] = useState(false);
 
   return (
-    <section className="rounded-lg border border-[#F3D7C8] bg-white p-5">
+    <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-[#2F2C2A]">Recommended Assignment</p>
@@ -28,9 +28,9 @@ export function AssignmentPanel({ selectedWorker, onSelectWorker }: AssignmentPa
         <button
           type="button"
           onClick={() => onSelectWorker(selectedWorker)}
-          className="flex min-h-[96px] items-center gap-4 rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4 text-left"
+          className="flex min-h-[96px] items-center gap-4 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4 text-left"
         >
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-[#FD7124] text-sm font-bold text-white">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-[#FD7124] text-sm font-bold text-white">
             {selectedWorker.name
               .split(' ')
               .map((word) => word[0])
@@ -57,7 +57,7 @@ export function AssignmentPanel({ selectedWorker, onSelectWorker }: AssignmentPa
             ['Nearby', 88],
             ['Fatigue OK', 91]
           ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-[#F3D7C8] p-3">
+            <div key={label} className="rounded-2xl border border-[#F3D7C8] p-3">
               <p className="text-xs font-medium text-[#776B63]">{label}</p>
               <p className="mt-1 text-lg font-semibold text-[#2F2C2A]">{value}%</p>
             </div>

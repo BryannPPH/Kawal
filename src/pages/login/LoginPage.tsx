@@ -29,7 +29,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <section className="grid min-h-screen place-items-center bg-[#F1F2F7] px-4 py-8">
-      <div className="w-full max-w-[430px] rounded-lg border border-[#F3D7C8] bg-white p-6 shadow-[0_24px_80px_rgba(76,48,35,0.12)]">
+      <div className="w-full max-w-[430px] rounded-2xl border border-[#F3D7C8] bg-white p-6 shadow-[0_24px_80px_rgba(76,48,35,0.12)]">
         <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center">
             <img src={kawalLogo} alt="Kawal logo" className="h-11 w-11 object-contain" />
@@ -47,7 +47,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <form className="mt-6 space-y-4" onSubmit={submitLogin}>
           <label className="block">
             <span className="text-sm font-semibold text-[#2F2C2A]">Email</span>
-            <span className="mt-2 flex h-11 items-center gap-3 rounded-md border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#776B63]">
+            <span className="mt-2 flex h-11 items-center gap-3 rounded-xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#776B63]">
               <Mail size={17} />
               <input
                 value={email}
@@ -63,7 +63,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
           <label className="block">
             <span className="text-sm font-semibold text-[#2F2C2A]">Password</span>
-            <span className="mt-2 flex h-11 items-center gap-3 rounded-md border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#776B63]">
+            <span className="mt-2 flex h-11 items-center gap-3 rounded-xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#776B63]">
               <Lock size={17} />
               <input
                 value={password}
@@ -77,12 +77,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             </span>
           </label>
 
-          {error ? <p className="rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error}</p> : null}
+          {error ? <p className="rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error}</p> : null}
 
           <button
             type="submit"
             disabled={loading}
-            className="h-11 w-full rounded-md bg-[#FD7124] text-sm font-semibold text-white transition hover:bg-[#E85F18] disabled:cursor-not-allowed disabled:opacity-70"
+            className="h-11 w-full rounded-xl bg-[#FD7124] text-sm font-semibold text-white transition hover:bg-[#E85F18] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
@@ -97,7 +97,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <button
           type="button"
           onClick={() => setError('Google OAuth is not connected yet.')}
-          className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-[#F3D7C8] bg-white text-sm font-semibold text-[#3D3835] transition hover:bg-[#FFF8F4]"
+          className="flex h-11 w-full items-center justify-center gap-3 rounded-xl border border-[#F3D7C8] bg-white text-sm font-semibold text-[#3D3835] transition hover:bg-[#FFF8F4]"
         >
           <GoogleLogo />
           Continue with Google

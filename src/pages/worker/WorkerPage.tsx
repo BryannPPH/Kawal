@@ -355,15 +355,15 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
             aria-label="Logout"
             title="Logout"
             onClick={onLogout}
-            className="grid h-10 w-10 place-items-center rounded-md border border-[#F3D7C8] bg-white text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
+            className="grid h-10 w-10 place-items-center rounded-xl border border-[#F3D7C8] bg-white text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
           >
             <LogOut size={17} />
           </button>
         </header>
 
         <div className="bg-[#FFFDFB] px-5">
-          {error ? <p className="mt-3 rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error}</p> : null}
-          {message ? <p className="mt-3 rounded-md bg-[#FFF7ED] px-3 py-2 text-sm font-semibold text-[#9A5719]">{message}</p> : null}
+          {error ? <p className="mt-3 rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error}</p> : null}
+          {message ? <p className="mt-3 rounded-xl bg-[#FFF7ED] px-3 py-2 text-sm font-semibold text-[#9A5719]">{message}</p> : null}
         </div>
 
         <main className="min-h-0 flex-1 overflow-y-auto bg-[#FFFDFB] px-5 pb-28 pt-3">
@@ -490,7 +490,7 @@ function HomePanel({
 
   return (
     <div className="flex min-h-full flex-col space-y-4">
-      <section className="rounded-lg bg-[#FD7124] p-5 text-white">
+      <section className="rounded-2xl bg-[#FD7124] p-5 text-white">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold text-white/75">Current Assignment</p>
@@ -504,8 +504,8 @@ function HomePanel({
           <MetricBox label="Risk" value={`${riskScore}%`} />
           <MetricBox label="Earning" value={worker.pay.replace('Rp', 'Rp')} />
         </div>
-        {activeIncident ? <p className="mt-4 rounded-md bg-white/15 px-3 py-2 text-sm font-semibold">SOS active: {activeIncident.state}</p> : null}
-        {currentBreak ? <p className="mt-4 rounded-md bg-white/15 px-3 py-2 text-sm font-semibold">Break active until {formatTime(currentBreak.ends_at ?? currentBreak.endsAt)}</p> : null}
+        {activeIncident ? <p className="mt-4 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold">SOS active: {activeIncident.state}</p> : null}
+        {currentBreak ? <p className="mt-4 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold">Break active until {formatTime(currentBreak.ends_at ?? currentBreak.endsAt)}</p> : null}
       </section>
 
       <section>
@@ -522,7 +522,7 @@ function HomePanel({
           <ProcedureStep done={worker.status === 'done'} icon={BriefcaseBusiness} label="Completion sent for review" />
         </ul>
         {latestPpeCheck ? (
-          <p className="mt-3 rounded-md bg-[#FFF8F4] px-3 py-2 text-xs font-semibold text-[#776B63]">
+          <p className="mt-3 rounded-xl bg-[#FFF8F4] px-3 py-2 text-xs font-semibold text-[#776B63]">
             PPE check / {Math.round(latestPpeCheck.confidence * 100)}% confidence
           </p>
         ) : null}
@@ -562,7 +562,7 @@ function TasksPanel({ tasks, worker }: { tasks: Task[]; worker: Worker }) {
       <div className="space-y-3">
         {tasks.length ? (
           tasks.map((task) => (
-            <div key={task.id} className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+            <div key={task.id} className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.title}</p>
@@ -578,7 +578,7 @@ function TasksPanel({ tasks, worker }: { tasks: Task[]; worker: Worker }) {
                 <InfoBox label="Priority" value={task.priority} />
               </div>
               {task.schedulerRecommendation.safetyAndOperationalWarnings.length ? (
-                <p className="mt-3 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#8A4B02]">
+                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#8A4B02]">
                   {task.schedulerRecommendation.safetyAndOperationalWarnings[0]}
                 </p>
               ) : null}
@@ -619,7 +619,7 @@ function ReportPanel({
             key={item}
             type="button"
             onClick={() => onSetHazardType(item)}
-            className={`min-h-10 rounded-md border px-2 text-sm font-semibold ${
+            className={`min-h-10 rounded-xl border px-2 text-sm font-semibold ${
               hazardType === item ? 'border-[#FD7124] bg-[#FFEFE6] text-[#B84011]' : 'border-[#F3D7C8] bg-white text-[#5F5A56]'
             }`}
           >
@@ -630,7 +630,7 @@ function ReportPanel({
       <textarea
         value={hazardNote}
         onChange={(event) => onSetHazardNote(event.target.value)}
-        className="mt-3 min-h-28 w-full rounded-md border border-[#F3D7C8] bg-[#FFF8F4] px-3 py-3 text-sm font-medium text-[#2F2C2A] outline-none transition placeholder:text-[#A09188] focus:border-[#FD7124] focus:bg-white focus:ring-2 focus:ring-[#FFEFE6]"
+        className="mt-3 min-h-28 w-full rounded-xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 py-3 text-sm font-medium text-[#2F2C2A] outline-none transition placeholder:text-[#A09188] focus:border-[#FD7124] focus:bg-white focus:ring-2 focus:ring-[#FFEFE6]"
         placeholder="Add location detail or what happened"
       />
       <Button variant="primary" className="mt-3 h-11 w-full" onClick={onSubmit} disabled={busyAction === 'hazards'}>
@@ -660,8 +660,8 @@ function ProfilePanel({
 }) {
   return (
     <section className="min-h-full space-y-4">
-      <div className="flex items-center gap-3 rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-        <span className="grid h-12 w-12 place-items-center rounded-lg bg-[#FD7124] text-sm font-bold text-white">{initials}</span>
+      <div className="flex items-center gap-3 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#FD7124] text-sm font-bold text-white">{initials}</span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-[#2F2C2A]">{worker.name}</p>
           <p className="mt-1 truncate text-sm text-[#776B63]">{worker.role} / {worker.zone}</p>
@@ -673,7 +673,7 @@ function ProfilePanel({
         <InfoBox label="Match" value={`${worker.match}%`} />
         <InfoBox label="Pay" value={worker.pay} />
       </div>
-      <div className="rounded-lg border border-[#F3D7C8] p-4">
+      <div className="rounded-2xl border border-[#F3D7C8] p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-[#2F2C2A]">Signals</p>
           <Pill className="bg-[#FFEFE6] text-[#C95119]">{unreadCount} unread</Pill>
@@ -684,7 +684,7 @@ function ProfilePanel({
           <p>Incident: {activeIncident ? activeIncident.state : 'No active SOS'}</p>
         </div>
       </div>
-      <div className="rounded-lg border border-[#F3D7C8] p-4">
+      <div className="rounded-2xl border border-[#F3D7C8] p-4">
         <div className="mb-3 flex items-center gap-2">
           <Bell size={16} className="text-[#FD7124]" />
           <p className="text-sm font-semibold text-[#2F2C2A]">Manager Updates</p>
@@ -692,7 +692,7 @@ function ProfilePanel({
         <div className="space-y-2">
           {notifications.length ? (
             notifications.slice(0, 4).map((notification) => (
-              <div key={notification.id} className="rounded-md bg-[#FFF8F4] px-3 py-2">
+              <div key={notification.id} className="rounded-xl bg-[#FFF8F4] px-3 py-2">
                 <p className="text-sm font-semibold text-[#2F2C2A]">{notification.title}</p>
                 <p className="mt-1 text-xs leading-5 text-[#776B63]">{notification.detail}</p>
               </div>
@@ -721,7 +721,7 @@ function WorkerNavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 rounded-md py-2 text-[11px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#FD7124] focus-visible:ring-offset-2 ${
+      className={`flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#FD7124] focus-visible:ring-offset-2 ${
         active ? 'bg-[#FFEFE6] text-[#B84011]' : 'text-[#776B63] hover:bg-[#FFF8F4]'
       }`}
     >
@@ -901,21 +901,21 @@ function PpeCameraModal({
             </div>
           </div>
           {cameraError || error ? (
-            <p className="mt-3 rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error ?? cameraError}</p>
+            <p className="mt-3 rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error ?? cameraError}</p>
           ) : null}
           {!busy ? (
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={onRetake}
-                className="inline-flex h-11 items-center justify-center rounded-md border border-[#F3D7C8] bg-white text-sm font-bold text-[#3D3835] transition hover:bg-[#FFF8F4]"
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-[#F3D7C8] bg-white text-sm font-bold text-[#3D3835] transition hover:bg-[#FFF8F4]"
               >
                 Retake
               </button>
               <button
                 type="button"
                 onClick={() => onCapture(capturedImage)}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18]"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18]"
               >
                 <Camera size={16} />
                 Verify
@@ -986,13 +986,13 @@ function PpeCameraModal({
 
       <div className="space-y-3 px-5 pb-5 pt-4">
         {cameraError || error ? (
-          <p className="rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error ?? cameraError}</p>
+          <p className="rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error ?? cameraError}</p>
         ) : null}
         <button
           type="button"
           onClick={captureFrame}
           disabled={busy || Boolean(cameraError)}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Camera size={18} />
           Capture & Verify
@@ -1010,7 +1010,7 @@ function stopStream(stream: MediaStream) {
 
 function MetricBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-white/10 p-3">
+    <div className="rounded-2xl bg-white/10 p-3">
       <p className="text-white/70">{label}</p>
       <p className="mt-1 truncate font-semibold">{value}</p>
     </div>
@@ -1019,7 +1019,7 @@ function MetricBox({ label, value }: { label: string; value: string }) {
 
 function InfoBox({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-md bg-[#FFF8F4] px-3 py-2">
+    <div className="rounded-xl bg-[#FFF8F4] px-3 py-2">
       <p className="text-[11px] font-semibold uppercase text-[#A09188]">{label}</p>
       <p className="mt-1 truncate text-sm font-semibold capitalize text-[#2F2C2A]">{value}</p>
     </div>
@@ -1027,11 +1027,11 @@ function InfoBox({ label, value }: { label: string; value: string | number }) {
 }
 
 function LoadingState() {
-  return <p className="rounded-md bg-[#FFF8F4] px-3 py-4 text-sm text-[#776B63]">Loading worker app...</p>;
+  return <p className="rounded-xl bg-[#FFF8F4] px-3 py-4 text-sm text-[#776B63]">Loading worker app...</p>;
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <p className="rounded-md bg-[#FFF8F4] px-3 py-4 text-sm text-[#776B63]">{text}</p>;
+  return <p className="rounded-xl bg-[#FFF8F4] px-3 py-4 text-sm text-[#776B63]">{text}</p>;
 }
 
 function formatTime(value?: string) {

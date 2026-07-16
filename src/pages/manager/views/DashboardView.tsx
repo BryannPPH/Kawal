@@ -27,7 +27,7 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-lg border border-[#F3D7C8] bg-white">
+      <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
         <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="p-6 sm:p-7">
             <div className="flex items-start justify-between gap-4">
@@ -36,7 +36,7 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
                 <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-normal text-[#2F2C2A]">Keep the site moving without overloading the crew.</h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-[#776B63]">A simplified view of task flow, fatigue pressure, and worker availability for the current shift.</p>
               </div>
-              <span className="hidden rounded-md bg-[#FFEFE6] px-3 py-1 text-xs font-semibold text-[#C95119] sm:inline-flex">Live</span>
+              <span className="hidden rounded-xl bg-[#FFEFE6] px-3 py-1 text-xs font-semibold text-[#C95119] sm:inline-flex">Live</span>
             </div>
 
             <div className="mt-7 grid gap-4 sm:grid-cols-3">
@@ -64,7 +64,7 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
         </div>
       </section>
 
-      <section className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
+      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Today&apos;s Focus</p>
@@ -105,8 +105,8 @@ function VisualBar({ label, value, accent }: { label: string; value: number; acc
 
 function FocusCard({ icon: Icon, label, value, detail }: { icon: typeof Users; label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-      <span className="grid h-10 w-10 place-items-center rounded-md bg-white text-[#FD7124]">
+    <div className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+      <span className="grid h-10 w-10 place-items-center rounded-xl bg-white text-[#FD7124]">
         <Icon size={18} />
       </span>
       <p className="mt-4 text-sm font-semibold text-[#2F2C2A]">{label}</p>

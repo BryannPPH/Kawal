@@ -15,7 +15,7 @@ export function WorkersView({ workers, selectedWorker, onSelectWorker }: Workers
 
   return (
     <div className="space-y-8">
-      <section className="rounded-lg border border-[#F3D7C8] bg-white p-6 sm:p-7">
+      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-6 sm:p-7">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
           <div>
             <p className="text-sm font-semibold text-[#C95119]">Crew Overview</p>
@@ -32,7 +32,7 @@ export function WorkersView({ workers, selectedWorker, onSelectWorker }: Workers
 
       <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
 
-      <section className="rounded-lg border border-[#F3D7C8] bg-white p-6">
+      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Crew Coverage</p>
@@ -41,7 +41,7 @@ export function WorkersView({ workers, selectedWorker, onSelectWorker }: Workers
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {['Steel Crew', 'Safety Support', 'Inspector'].map((role, index) => (
-            <div key={role} className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-5">
+            <div key={role} className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-5">
               <p className="text-sm font-semibold text-[#2F2C2A]">{role}</p>
               <div className="mt-5 flex items-end gap-2">
                 <p className="text-4xl font-semibold text-[#FD7124]">{[3, 2, 1][index]}</p>
@@ -60,8 +60,8 @@ export function WorkersView({ workers, selectedWorker, onSelectWorker }: Workers
 
 function CrewStat({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) {
   return (
-    <div className="rounded-lg bg-[#FFF8F4] p-4 text-center">
-      <span className="mx-auto grid h-10 w-10 place-items-center rounded-md bg-white text-[#FD7124]">
+    <div className="rounded-2xl bg-[#FFF8F4] p-4 text-center">
+      <span className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-white text-[#FD7124]">
         <Icon size={17} />
       </span>
       <p className="mt-3 text-3xl font-semibold text-[#2F2C2A]">{value}</p>

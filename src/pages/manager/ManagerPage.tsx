@@ -240,7 +240,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
         <header className="sticky top-0 z-20 border-b border-[#F3D7C8] bg-white/95 px-5 py-4 backdrop-blur sm:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-3xl xl:max-w-4xl">
-              <div className="flex h-11 items-center rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#A09188] transition focus-within:border-[#FD7124] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#FFEFE6]">
+              <div className="flex h-11 items-center rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#A09188] transition focus-within:border-[#FD7124] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#FFEFE6]">
                 <Search size={17} />
                 <input
                   value={searchQuery}
@@ -275,7 +275,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                       setSearchQuery('');
                       setSearchOpen(false);
                     }}
-                    className="grid h-7 w-7 place-items-center rounded-md text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
+                    className="grid h-7 w-7 place-items-center rounded-xl text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
                   >
                     <X size={15} />
                   </button>
@@ -283,7 +283,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
               </div>
 
               {searchOpen && searchQuery.trim() ? (
-                <div className="absolute left-0 right-0 top-12 z-30 rounded-lg border border-[#F3D7C8] bg-white p-2 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
+                <div className="absolute left-0 right-0 top-12 z-30 rounded-2xl border border-[#F3D7C8] bg-white p-2 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
                   {searchResults.length ? (
                     <div className="max-h-[360px] overflow-y-auto">
                       {searchResults.map((result) => (
@@ -292,7 +292,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => openSearchResult(result)}
-                          className="group grid w-full gap-1 rounded-md px-3 py-3 text-left transition hover:bg-[#FFEFE6]"
+                          className="group grid w-full gap-1 rounded-xl px-3 py-3 text-left transition hover:bg-[#FFEFE6]"
                         >
                           <div className="flex items-center justify-between gap-3">
                             <p className="min-w-0 truncate text-sm font-semibold text-[#2F2C2A]">{result.title}</p>
@@ -317,28 +317,28 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                   aria-label="Priority alerts"
                   title="Priority alerts"
                   onClick={() => setAlertsOpen((value) => !value)}
-                  className="relative grid h-10 w-10 place-items-center rounded-md border border-[#F3D7C8] bg-white text-[#5F5A56] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
+                  className="relative grid h-10 w-10 place-items-center rounded-xl border border-[#F3D7C8] bg-white text-[#5F5A56] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
                 >
                   <Bell size={17} />
                   {unreadNotifications.length > 0 ? <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#FD7124]" /> : null}
                 </button>
 
                 {alertsOpen ? (
-                  <div className="absolute right-0 top-12 z-30 w-[320px] rounded-lg border border-[#F3D7C8] bg-white p-3 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
+                  <div className="absolute right-0 top-12 z-30 w-[320px] rounded-2xl border border-[#F3D7C8] bg-white p-3 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-[#2F2C2A]">Priority Alerts</p>
                       <span className="rounded bg-[#FFEFE6] px-2 py-1 text-xs font-semibold text-[#C95119]">
                         {unreadNotifications.length} unread
                       </span>
                     </div>
-                    {error ? <p className="mb-3 rounded-md bg-[#FFF4DC] px-3 py-2 text-xs font-semibold text-[#8A4B02]">Unable to refresh live data</p> : null}
+                    {error ? <p className="mb-3 rounded-xl bg-[#FFF4DC] px-3 py-2 text-xs font-semibold text-[#8A4B02]">Unable to refresh live data</p> : null}
                     <div className="space-y-2">
                       {notifications.map((item) => (
                         <button
                           key={item.id}
                           type="button"
                           onClick={() => openNotificationTarget(item)}
-                          className={`group w-full rounded-md border border-[#F3D7C8] p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6] ${
+                          className={`group w-full rounded-xl border border-[#F3D7C8] p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6] ${
                             item.read ? 'bg-white opacity-75' : 'bg-[#FFF8F4]'
                           }`}
                         >
@@ -377,7 +377,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                 key={section}
                 type="button"
                 onClick={() => selectSection(section)}
-                className={`h-9 shrink-0 rounded-md px-3 text-sm font-semibold capitalize ${
+                className={`h-9 shrink-0 rounded-xl px-3 text-sm font-semibold capitalize ${
                   activeSection === section ? 'bg-[#FD7124] text-white' : 'border border-[#F3D7C8] bg-white text-[#5F5A56]'
                 }`}
               >
@@ -392,7 +392,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
 
       {createTaskOpen ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-[#2F2C2A]/30 px-4">
-          <form onSubmit={submitTask} className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-lg border border-[#F3D7C8] bg-white p-5 shadow-[0_24px_80px_rgba(76,48,35,0.18)]">
+          <form onSubmit={submitTask} className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-2xl border border-[#F3D7C8] bg-white p-5 shadow-[0_24px_80px_rgba(76,48,35,0.18)]">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-semibold text-[#2F2C2A]">Create Task</p>
@@ -403,7 +403,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                 aria-label="Close create task"
                 title="Close"
                 onClick={() => setCreateTaskOpen(false)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FD7124] focus-visible:ring-offset-2"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FD7124] focus-visible:ring-offset-2"
               >
                 <X size={16} />
               </button>
@@ -456,11 +456,11 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
               </label>
             </div>
 
-            {taskError ? <p className="mt-4 rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{taskError}</p> : null}
+            {taskError ? <p className="mt-4 rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{taskError}</p> : null}
 
             <div className="mt-5 flex justify-end gap-2">
               <Button onClick={() => setCreateTaskOpen(false)}>Cancel</Button>
-              <button type="submit" disabled={taskSubmitting} className="inline-flex h-10 items-center justify-center rounded-md bg-[#FD7124] px-4 text-sm font-semibold text-white transition hover:bg-[#E85F18] disabled:cursor-wait disabled:opacity-60">
+              <button type="submit" disabled={taskSubmitting} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#FD7124] px-4 text-sm font-semibold text-white transition hover:bg-[#E85F18] disabled:cursor-wait disabled:opacity-60">
                 {taskSubmitting ? 'Creating...' : 'Save Task'}
               </button>
             </div>

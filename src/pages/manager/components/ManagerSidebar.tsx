@@ -33,7 +33,7 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
                 type="button"
                 aria-current={active ? 'page' : undefined}
                 onClick={() => onSelectSection(section)}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-semibold ${
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${
                   active ? 'bg-[#FD7124] text-white' : 'text-[#776B63] hover:bg-[#FFEFE6] hover:text-[#2F2C2A]'
                 }`}
               >
@@ -44,7 +44,7 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
           })}
         </nav>
 
-        <div className="mt-8 rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+        <div className="mt-8 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
           <p className="text-sm font-semibold text-[#2F2C2A]">Current Page</p>
           <p className="mt-1 text-sm text-[#776B63]">{activeLabel}</p>
           <div className="mt-4 flex items-center gap-2">
@@ -55,7 +55,7 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
       </div>
 
       <div className="mt-5 border-t border-[#F3D7C8] pt-4">
-        <div className="flex items-center gap-3 rounded-lg bg-[#FFF8F4] p-3">
+        <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F4] p-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#FD7124] text-sm font-semibold text-white">
             JM
           </span>

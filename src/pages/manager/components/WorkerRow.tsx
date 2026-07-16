@@ -13,12 +13,12 @@ export function WorkerRow({ worker, selected, onSelect }: WorkerRowProps) {
     <button
       type="button"
       onClick={() => onSelect(worker)}
-      className={`grid w-full grid-cols-1 items-center gap-5 rounded-lg border bg-white p-5 text-left transition hover:border-[#FAA745] hover:bg-[#FFF8F4] lg:grid-cols-[minmax(190px,1.3fr)_120px_minmax(150px,1fr)] xl:grid-cols-[minmax(190px,1.4fr)_120px_minmax(150px,1fr)_110px] ${
+      className={`grid w-full grid-cols-1 items-center gap-5 rounded-2xl border bg-white p-5 text-left transition hover:border-[#FAA745] hover:bg-[#FFF8F4] lg:grid-cols-[minmax(190px,1.3fr)_120px_minmax(150px,1fr)] xl:grid-cols-[minmax(190px,1.4fr)_120px_minmax(150px,1fr)_110px] ${
         selected ? 'border-[#FD7124] ring-2 ring-[#FFEFE6]' : 'border-[#F3D7C8]'
       }`}
     >
       <span className="flex min-w-0 items-center gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#FFEFE6] text-sm font-semibold text-[#C95119]">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFEFE6] text-sm font-semibold text-[#C95119]">
           {worker.name
             .split(' ')
             .map((word) => word[0])
