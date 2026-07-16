@@ -8,6 +8,7 @@ const fallbackOverview: IoTOverview = {
   activeIncidents: [],
   restRequests: [],
   commands: [],
+  latestFatigue: [],
   latestRisk: []
 };
 
@@ -141,6 +142,7 @@ function StatusTile({
 function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: IoTOverview }) {
   const sos = overview.activeIncidents.find((incident) => incident.device_id === device.id);
   const rest = overview.restRequests.find((request) => request.device_id === device.id);
+  const restScore = rest?.fatigue_score_at_request ?? rest?.risk_score_at_request;
   const hasSignal = Boolean(sos || rest);
 
   return (
@@ -172,7 +174,7 @@ function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: I
             <TimerReset size={15} className={rest ? 'text-[#8A4B02]' : 'text-[#A09188]'} />
             <p className="text-xs font-semibold text-[#2F2C2A]">Rest Request</p>
           </div>
-          <p className="mt-2 text-sm text-[#776B63]">{rest ? `${rest.status} / risk ${rest.risk_score_at_request}` : 'No rest request'}</p>
+          <p className="mt-2 text-sm text-[#776B63]">{rest ? `${rest.status} / fatigue ${restScore}` : 'No rest request'}</p>
         </div>
       </div>
       {sos || rest ? (

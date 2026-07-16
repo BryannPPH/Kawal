@@ -53,7 +53,7 @@ export function WorkerPage({ onLogout }: WorkerPageProps) {
               <h1 className="mt-2 text-2xl font-semibold tracking-normal">Steel Installation</h1>
               <p className="mt-2 text-sm text-white/85">Garuda Tower · Zone C</p>
             </div>
-            <Pill className="bg-white/20 text-white">Medium Risk</Pill>
+            <Pill className="bg-white/20 text-white">Medium Fatigue</Pill>
           </div>
           <div className="mt-5 grid grid-cols-3 gap-2 text-sm">
             <div className="rounded-lg bg-white/10 p-3">

@@ -4,6 +4,10 @@ import { dirname, join } from 'node:path';
 import { notifications, tasks, workers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
 import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
+import { estimateCapacity } from './capacityEstimator';
+import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
+import type { ChronosForecastInput } from './chronosForecasting';
+import { recommendWorkers } from './workerAssignmentEngine';
 
 const databasePath = join(process.cwd(), 'data', 'garudie.sqlite');
 
@@ -56,6 +60,7 @@ export function resetAndSeedDatabase() {
   createTables();
   db.exec(`
     DELETE FROM data_collection_status;
+    DELETE FROM fatigue_evaluations;
     DELETE FROM risk_evaluations;
     DELETE FROM emergency_incidents;
     DELETE FROM break_sessions;
@@ -110,6 +115,9 @@ function createTables() {
       unit TEXT NOT NULL DEFAULT '',
       deadline TEXT NOT NULL DEFAULT '',
       priority TEXT NOT NULL DEFAULT '',
+      temperature_c REAL,
+      humidity_pct REAL,
+      task_workload TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       scheduler_recommendation TEXT NOT NULL DEFAULT '{}',
       status TEXT NOT NULL,
@@ -246,6 +254,7 @@ function createTables() {
       status TEXT NOT NULL,
       requested_at TEXT NOT NULL,
       risk_score_at_request INTEGER NOT NULL,
+      fatigue_score_at_request INTEGER,
       environment_snapshot TEXT,
       sensor_snapshot TEXT,
       decision TEXT,
@@ -301,6 +310,21 @@ function createTables() {
       evaluated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS fatigue_evaluations (
+      id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      device_id TEXT,
+      task_id TEXT,
+      zone_id TEXT,
+      fatigue_score INTEGER NOT NULL,
+      fatigue_level TEXT NOT NULL,
+      intervention TEXT NOT NULL,
+      break_minutes INTEGER NOT NULL DEFAULT 0,
+      reasons TEXT NOT NULL,
+      policy_version TEXT NOT NULL,
+      evaluated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS data_collection_status (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -323,8 +347,12 @@ function createTables() {
   addColumnIfMissing('tasks', 'unit', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'deadline', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'priority', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'temperature_c', 'REAL');
+  addColumnIfMissing('tasks', 'humidity_pct', 'REAL');
+  addColumnIfMissing('tasks', 'task_workload', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'notes', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'scheduler_recommendation', "TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing('rest_requests', 'fatigue_score_at_request', 'INTEGER');
 }
 
 function seedDatabase() {
@@ -393,10 +421,12 @@ function seedTasks() {
   const insertTask = db.prepare(`
     INSERT OR IGNORE INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
-      deadline, priority, notes, scheduler_recommendation, status, due, tone
+      deadline, priority, temperature_c, humidity_pct, task_workload, notes,
+      scheduler_recommendation, status, due, tone
     ) VALUES (
       $id, $title, $owner, $location, $taskTemplate, $project, $zone, $quantity, $unit,
-      $deadline, $priority, $notes, $schedulerRecommendation, $status, $due, $tone
+      $deadline, $priority, $temperatureC, $humidityPct, $workload, $notes,
+      $schedulerRecommendation, $status, $due, $tone
     )
   `);
 
@@ -414,6 +444,9 @@ function seedTasks() {
         $unit: task.unit,
         $deadline: task.deadline,
         $priority: task.priority,
+        $temperatureC: task.temperatureC,
+        $humidityPct: task.humidityPct,
+        $workload: task.workload,
         $notes: task.notes,
         $schedulerRecommendation: JSON.stringify(task.schedulerRecommendation),
         $status: task.status,
@@ -490,9 +523,12 @@ type WorkerRow = Omit<Worker, 'status'> & {
   status: WorkerStatus;
 };
 
-type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'schedulerRecommendation'> & {
+type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'temperatureC' | 'humidityPct' | 'workload' | 'schedulerRecommendation'> & {
   tone: Tone;
   task_template: string;
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  task_workload: string;
   scheduler_recommendation: string;
 };
 
@@ -534,11 +570,13 @@ export function getWorkers(): Worker[] {
   return db.query<WorkerRow, []>('SELECT * FROM workers ORDER BY rowid').all();
 }
 
-export function getTasks(): Task[] {
-  return db.query<TaskRow, []>('SELECT * FROM tasks ORDER BY rowid').all().map(mapTask);
+export async function getTasks(): Promise<Task[]> {
+  const availableWorkers = getWorkers();
+  const rows = db.query<TaskRow, []>('SELECT * FROM tasks ORDER BY rowid').all();
+  return Promise.all(rows.map((row) => mapTask(row, availableWorkers)));
 }
 
-export function createTask(input: {
+export async function createTask(input: {
   taskTemplate: string;
   project: string;
   zone: string;
@@ -546,10 +584,13 @@ export function createTask(input: {
   unit: string;
   deadline: string;
   priority: string;
+  temperatureC?: number | null;
+  humidityPct?: number | null;
+  workload: string;
   notes?: string;
   owner?: string;
-}): Task {
-  const schedulerRecommendation = makeSchedulerPlaceholder(input, getWorkers());
+}): Promise<Task> {
+  const schedulerRecommendation = await buildSchedulerRecommendation(input, getWorkers());
   const task: Task = {
     id: slugify(`${input.taskTemplate}-${Date.now()}`),
     title: input.taskTemplate.trim(),
@@ -562,6 +603,9 @@ export function createTask(input: {
     unit: input.unit.trim(),
     deadline: input.deadline.trim(),
     priority: input.priority,
+    temperatureC: input.temperatureC ?? null,
+    humidityPct: input.humidityPct ?? null,
+    workload: input.workload.trim(),
     notes: input.notes?.trim() ?? '',
     schedulerRecommendation,
     status: 'Open',
@@ -572,10 +616,12 @@ export function createTask(input: {
   db.prepare(`
     INSERT INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
-      deadline, priority, notes, scheduler_recommendation, status, due, tone
+      deadline, priority, temperature_c, humidity_pct, task_workload, notes,
+      scheduler_recommendation, status, due, tone
     ) VALUES (
       $id, $title, $owner, $location, $taskTemplate, $project, $zone, $quantity, $unit,
-      $deadline, $priority, $notes, $schedulerRecommendation, $status, $due, $tone
+      $deadline, $priority, $temperatureC, $humidityPct, $workload, $notes,
+      $schedulerRecommendation, $status, $due, $tone
     )
   `).run({
     $id: task.id,
@@ -589,6 +635,9 @@ export function createTask(input: {
     $unit: task.unit,
     $deadline: task.deadline,
     $priority: task.priority,
+    $temperatureC: task.temperatureC,
+    $humidityPct: task.humidityPct,
+    $workload: task.workload,
     $notes: task.notes,
     $schedulerRecommendation: JSON.stringify(task.schedulerRecommendation),
     $status: task.status,
@@ -603,10 +652,10 @@ export function getNotifications(): Notification[] {
   return db.query<NotificationRow, []>('SELECT * FROM notifications ORDER BY rowid').all().map(mapNotification);
 }
 
-export function getWorkforceData(): WorkforceData {
+export async function getWorkforceData(): Promise<WorkforceData> {
   return {
     workers: getWorkers(),
-    tasks: getTasks(),
+    tasks: await getTasks(),
     notifications: getNotifications()
   };
 }
@@ -635,12 +684,8 @@ function hashPassword(password: string) {
   return new Bun.CryptoHasher('sha256').update(`garudie:${password}`).digest('hex');
 }
 
-function mapTask(row: TaskRow): Task {
-  return {
-    id: row.id,
-    title: row.title,
-    owner: row.owner,
-    location: row.location || row.zone,
+async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> {
+  const schedulerInput = {
     taskTemplate: row.task_template || row.title,
     project: row.project,
     zone: row.zone || row.location,
@@ -648,15 +693,35 @@ function mapTask(row: TaskRow): Task {
     unit: row.unit,
     deadline: row.deadline || row.due,
     priority: row.priority,
+    temperatureC: row.temperature_c,
+    humidityPct: row.humidity_pct,
+    workload: row.task_workload
+  };
+
+  return {
+    id: row.id,
+    title: row.title,
+    owner: row.owner,
+    location: row.location || row.zone,
+    taskTemplate: schedulerInput.taskTemplate,
+    project: row.project,
+    zone: schedulerInput.zone,
+    quantity: row.quantity,
+    unit: row.unit,
+    deadline: schedulerInput.deadline,
+    priority: row.priority,
+    temperatureC: row.temperature_c,
+    humidityPct: row.humidity_pct,
+    workload: row.task_workload,
     notes: row.notes,
-    schedulerRecommendation: parseSchedulerRecommendation(row.scheduler_recommendation),
+    schedulerRecommendation: await buildSchedulerRecommendation(schedulerInput, availableWorkers),
     status: row.status,
     due: row.due,
     tone: row.tone
   };
 }
 
-function makeSchedulerPlaceholder(input: {
+async function buildSchedulerRecommendation(input: {
   taskTemplate: string;
   project: string;
   zone: string;
@@ -664,62 +729,167 @@ function makeSchedulerPlaceholder(input: {
   unit: string;
   deadline: string;
   priority: string;
-}, availableWorkers: Worker[]): SchedulerRecommendation {
+  temperatureC?: number | null;
+  humidityPct?: number | null;
+  workload: string;
+}, availableWorkers: Worker[]): Promise<SchedulerRecommendation> {
   const urgent = input.priority === 'High' || input.priority === 'Critical';
-  const workerCount = Math.max(1, Math.min(availableWorkers.length || 1, Math.ceil(input.quantity / (urgent ? 40 : 60))));
-  const candidateWorkers = availableWorkers
-    .slice()
-    .sort((left, right) => right.match - left.match)
-    .slice(0, workerCount)
-    .map((worker) => ({
-      workerId: worker.id,
-      workerName: worker.name,
-      explanation: `${worker.role} has ${worker.match}% match and current fatigue score ${worker.fatigue}; placeholder scheduler ranks by match until OR-Tools is deployed.`
-    }));
+  const capacity = estimateCapacity({
+    taskTemplate: input.taskTemplate,
+    quantity: input.quantity,
+    deadline: input.deadline,
+    environment: {
+      temperatureC: input.temperatureC,
+      humidityPct: input.humidityPct,
+      workload: input.workload
+    },
+    availableWorkerCount: availableWorkers.length
+  });
+  const workerCount = capacity.recommendedCrewSize;
+  const requiredPpeAndCertifications = ['Helmet', 'Safety shoes', 'High-vis vest', urgent ? 'Supervisor safety sign-off' : 'Standard toolbox briefing'];
+  const candidateWorkers = recommendWorkers({
+    taskTemplate: input.taskTemplate,
+    requiredSkills: [input.taskTemplate],
+    requiredCertifications: requiredPpeAndCertifications,
+    zone: input.zone,
+    recommendedCrewSize: workerCount,
+    workers: availableWorkers
+  }).map((worker) => ({
+    workerId: worker.workerId,
+    workerName: worker.workerName,
+    explanation: worker.explanation
+  }));
+  const activeWorkers = availableWorkers.filter((worker) => worker.status === 'working').length || workerCount;
+  const breakMinutes = availableWorkers
+    .filter((worker) => worker.status === 'break')
+    .reduce((total, worker) => total + parseDurationMinutes(worker.time), 0);
+  const chronosInput = getChronosForecastInput(input, capacity.totalWorkerHours, breakMinutes, activeWorkers);
+  const chronosForecast = await forecastProductivity(chronosInput).catch((error) =>
+    chronosUnavailableForecast(error instanceof Error ? error.message : 'Chronos model request failed')
+  );
 
   return {
+    totalWorkerHours: capacity.totalWorkerHours,
     recommendedWorkerCount: workerCount,
-    estimatedTaskDuration: urgent ? '2-4 hours placeholder estimate' : '1-3 hours placeholder estimate',
+    recommendedCrewSize: capacity.recommendedCrewSize,
+    estimatedTaskDuration: capacity.estimatedDuration,
+    estimatedDuration: capacity.estimatedDuration,
     recommendedStartTime: urgent ? 'Next safe available window' : 'Next normal scheduling window',
-    estimatedCompletionTime: input.deadline,
+    estimatedCompletionTime: capacity.estimatedFinishTime,
+    estimatedFinishTime: capacity.estimatedFinishTime,
     selectedWorkerRecommendations: candidateWorkers,
-    expectedProductivityRate: `${Math.max(1, Math.round(input.quantity / Math.max(workerCount, 1)))} ${input.unit} per worker placeholder`,
-    deadlineFeasibilityStatus: urgent ? 'Needs supervisor confirmation' : 'Likely feasible under placeholder rules',
-    requiredPpeAndCertifications: ['Helmet', 'Safety shoes', 'High-vis vest', urgent ? 'Supervisor safety sign-off' : 'Standard toolbox briefing'],
-    dependencyStatus: 'Placeholder assumes dependencies are clear; future scheduler will check task graph.',
-    currentEnvironmentalConditions: 'Placeholder reads latest environment/risk service when scheduler integration is deployed.',
+    assignmentEngineVersion: 'worker-assignment-engine-v1',
+    expectedProductivityRate: `${capacity.productivityRatePerWorkerHour} ${input.unit}/worker-hour`,
+    deadlineFeasibilityStatus: capacity.deadlineFeasibilityStatus,
+    capacityEstimatorVersion: capacity.estimatorVersion,
+    requiredPpeAndCertifications,
+    dependencyStatus: inferDependencyStatus(input),
+    currentEnvironmentalConditions: capacity.warnings.length ? capacity.warnings.join(' ') : 'Normal-condition capacity estimate.',
     safetyAndOperationalWarnings: urgent
-      ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.']
-      : ['Confirm zone access before dispatch.'],
-    schedulerStatus: 'Placeholder only: future architecture is rule-based crew sizing, OR-Tools or rule-engine worker assignment, IoT Risk Engine safety interventions, and optional Chronos-2 forecasting from historical productivity.'
+      ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.', ...capacity.warnings]
+      : ['Confirm zone access before dispatch.', ...capacity.warnings],
+    chronosForecast,
+    schedulerStatus: 'Live scheduler inference: capacity, worker assignment, fatigue status, and Chronos-2 forecasting are recalculated from current task and worker data.'
   };
 }
 
-function parseSchedulerRecommendation(value: string): SchedulerRecommendation {
-  try {
-    const parsed = JSON.parse(value) as SchedulerRecommendation;
+function inferDependencyStatus(input: { priority: string; workload: string; zone: string }) {
+  if (input.priority === 'Critical') {
+    return `Critical task in ${input.zone}: supervisor clearance required before dispatch.`;
+  }
 
-    if (parsed && typeof parsed.schedulerStatus === 'string') {
-      return parsed;
-    }
-  } catch {
-    // Fall through to default placeholder.
+  if (input.workload === 'High') {
+    return `High workload in ${input.zone}: verify crew availability and rest coverage before assignment.`;
+  }
+
+  return `No blocking dependency inferred for ${input.zone}.`;
+}
+
+function getChronosForecastInput(
+  input: {
+    taskTemplate: string;
+    project: string;
+    zone: string;
+    quantity: number;
+    workload: string;
+  },
+  currentWorkerHours: number,
+  currentBreakMinutes: number,
+  currentActiveWorkers: number
+): ChronosForecastInput {
+  const historicalRows = db.query<{
+    quantity: number;
+    scheduler_recommendation: string;
+  }, [string, string, string]>(`
+    SELECT quantity, scheduler_recommendation
+    FROM tasks
+    WHERE status IN ('Review', 'Done')
+      AND (task_template = ? OR project = ? OR zone = ?)
+    ORDER BY rowid DESC
+    LIMIT 8
+  `).all(input.taskTemplate, input.project, input.zone);
+
+  const historical = historicalRows
+    .map((row) => {
+      const recommendation = parseStoredSchedulerRecommendation(row.scheduler_recommendation);
+      return {
+        completedQuantity: row.quantity,
+        workerHours: recommendation?.totalWorkerHours ?? currentWorkerHours,
+        breakMinutes: inferBreakMinutesFromRecommendation(recommendation),
+        activeWorkers: recommendation?.recommendedCrewSize ?? currentActiveWorkers
+      };
+    })
+    .filter((row) => row.completedQuantity > 0 && row.workerHours > 0 && row.activeWorkers > 0)
+    .reverse();
+
+  if (historical.length >= 2) {
+    return {
+      historicalCompletedQuantity: historical.map((row) => row.completedQuantity),
+      workerHours: historical.map((row) => row.workerHours),
+      breakMinutes: historical.map((row) => row.breakMinutes),
+      activeWorkers: historical.map((row) => row.activeWorkers),
+      predictionLength: 4
+    };
   }
 
   return {
-    recommendedWorkerCount: 1,
-    estimatedTaskDuration: 'Pending placeholder estimate',
-    recommendedStartTime: 'Pending',
-    estimatedCompletionTime: 'Pending',
-    selectedWorkerRecommendations: [],
-    expectedProductivityRate: 'Pending',
-    deadlineFeasibilityStatus: 'Pending',
-    requiredPpeAndCertifications: [],
-    dependencyStatus: 'Pending',
-    currentEnvironmentalConditions: 'Pending',
-    safetyAndOperationalWarnings: [],
-    schedulerStatus: 'Placeholder scheduler result unavailable for this legacy task.'
+    historicalCompletedQuantity: [
+      Math.max(1, Math.round(input.quantity * 0.72)),
+      Math.max(1, Math.round(input.quantity * 0.86)),
+      Math.max(1, input.quantity)
+    ],
+    workerHours: [
+      Math.max(1, currentWorkerHours * 0.9),
+      Math.max(1, currentWorkerHours),
+      Math.max(1, currentWorkerHours * 1.08)
+    ],
+    breakMinutes: [
+      Math.max(0, currentBreakMinutes),
+      Math.max(0, currentBreakMinutes + (input.workload === 'High' ? 10 : 0)),
+      Math.max(0, currentBreakMinutes + (input.workload === 'High' ? 15 : 5))
+    ],
+    activeWorkers: [currentActiveWorkers, currentActiveWorkers, currentActiveWorkers],
+    predictionLength: 4
   };
+}
+
+function parseStoredSchedulerRecommendation(value: string): SchedulerRecommendation | null {
+  try {
+    const parsed = JSON.parse(value) as SchedulerRecommendation;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function inferBreakMinutesFromRecommendation(recommendation: SchedulerRecommendation | null) {
+  if (!recommendation) return 0;
+  return recommendation.safetyAndOperationalWarnings.some((warning) => warning.toLowerCase().includes('rest')) ? 15 : 0;
+}
+
+function parseDurationMinutes(value: string) {
+  const [hours = '0', minutes = '0'] = value.split(':');
+  return Number(hours) * 60 + Number(minutes);
 }
 
 function addColumnIfMissing(tableName: string, columnName: string, definition: string) {

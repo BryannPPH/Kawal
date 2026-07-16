@@ -1,8 +1,11 @@
 import { authenticateUser, createTask, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
+import { estimateCapacity } from './capacityEstimator';
+import { forecastProductivity } from './chronosForecasting';
 import {
   approveRestRequest,
   assignDevice,
   completeBreak,
+  evaluateWorkerFatigue,
   evaluateWorkerRisk,
   expirePendingCommands,
   getActiveIncidents,
@@ -15,9 +18,11 @@ import {
   getIncident,
   getIncidentCenter,
   getIoTOverview,
+  getLatestFatigue,
   getLatestRisk,
   getRestRequest,
   getRestRequests,
+  getFatigueHistory,
   getRiskHistory,
   listDevices,
   processIoTMessage,
@@ -27,6 +32,7 @@ import {
   updateIncidentState,
   updateSiteConditions
 } from './iot';
+import { recommendWorkers } from './workerAssignmentEngine';
 
 const port = Number(process.env.API_PORT ?? 3001);
 
@@ -67,7 +73,7 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/workforce') {
-      return jsonResponse(getWorkforceData());
+      return jsonResponse(await getWorkforceData());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/iot/overview') {
@@ -103,7 +109,99 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/tasks') {
-      return jsonResponse(getTasks());
+      return jsonResponse(await getTasks());
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/capacity/estimate') {
+      const body = await readJsonBody<{
+        taskTemplate?: string;
+        quantity?: number;
+        deadline?: string;
+        environment?: {
+          temperatureC?: number;
+          humidityPct?: number;
+          workload?: string;
+        };
+      }>(request);
+
+      if (!body.taskTemplate?.trim() || typeof body.quantity !== 'number' || body.quantity <= 0 || !body.deadline?.trim()) {
+        return jsonResponse({ error: 'taskTemplate, quantity, and deadline are required' }, { status: 400 });
+      }
+
+      const estimate = estimateCapacity({
+        taskTemplate: body.taskTemplate,
+        quantity: body.quantity,
+        deadline: body.deadline,
+        environment: body.environment,
+        availableWorkerCount: getWorkers().length
+      });
+
+      return jsonResponse({
+        recommendedCrewSize: estimate.recommendedCrewSize,
+        estimatedDuration: estimate.estimatedDuration,
+        estimatedFinishTime: estimate.estimatedFinishTime,
+        deadlineFeasibilityStatus: estimate.deadlineFeasibilityStatus,
+        totalWorkerHours: estimate.totalWorkerHours
+      });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/assignment/recommend') {
+      const body = await readJsonBody<{
+        taskTemplate?: string;
+        requiredSkills?: string[];
+        requiredCertifications?: string[];
+        zone?: string;
+        recommendedCrewSize?: number;
+      }>(request);
+
+      if (!body.taskTemplate?.trim()) {
+        return jsonResponse({ error: 'taskTemplate is required' }, { status: 400 });
+      }
+
+      return jsonResponse({
+        assignmentEngineVersion: 'worker-assignment-engine-v1',
+        recommendations: recommendWorkers({
+          taskTemplate: body.taskTemplate,
+          requiredSkills: body.requiredSkills,
+          requiredCertifications: body.requiredCertifications,
+          zone: body.zone,
+          recommendedCrewSize: body.recommendedCrewSize ?? 3,
+          workers: getWorkers()
+        })
+      });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/chronos/forecast') {
+      const body = await readJsonBody<{
+        historicalCompletedQuantity?: number[];
+        workerHours?: number[];
+        breakMinutes?: number[];
+        activeWorkers?: number[];
+        predictionLength?: number;
+      }>(request);
+
+      if (
+        !Array.isArray(body.historicalCompletedQuantity) ||
+        !Array.isArray(body.workerHours) ||
+        !Array.isArray(body.breakMinutes) ||
+        !Array.isArray(body.activeWorkers)
+      ) {
+        return jsonResponse({ error: 'historicalCompletedQuantity, workerHours, breakMinutes, and activeWorkers arrays are required' }, { status: 400 });
+      }
+
+      try {
+        return jsonResponse(await forecastProductivity({
+          historicalCompletedQuantity: body.historicalCompletedQuantity,
+          workerHours: body.workerHours,
+          breakMinutes: body.breakMinutes,
+          activeWorkers: body.activeWorkers,
+          predictionLength: body.predictionLength
+        }));
+      } catch (error) {
+        return jsonResponse({
+          error: error instanceof Error ? error.message : 'Chronos service unavailable'
+        }, { status: 503 });
+      }
     }
 
     if (request.method === 'POST' && url.pathname === '/api/tasks') {
@@ -115,6 +213,9 @@ const server = Bun.serve({
         unit?: string;
         deadline?: string;
         priority?: string;
+        temperatureC?: number;
+        humidityPct?: number;
+        workload?: string;
         notes?: string;
         owner?: string;
       }>(request);
@@ -127,12 +228,13 @@ const server = Bun.serve({
         body.quantity <= 0 ||
         !body.unit?.trim() ||
         !body.deadline?.trim() ||
-        !body.priority?.trim()
+        !body.priority?.trim() ||
+        !body.workload?.trim()
       ) {
-        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, and priority are required' }, { status: 400 });
+        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, priority, and workload are required' }, { status: 400 });
       }
 
-      return jsonResponse(createTask({
+      return jsonResponse(await createTask({
         taskTemplate: body.taskTemplate,
         project: body.project,
         zone: body.zone,
@@ -140,6 +242,9 @@ const server = Bun.serve({
         unit: body.unit,
         deadline: body.deadline,
         priority: body.priority,
+        temperatureC: typeof body.temperatureC === 'number' ? body.temperatureC : null,
+        humidityPct: typeof body.humidityPct === 'number' ? body.humidityPct : null,
+        workload: body.workload,
         notes: body.notes,
         owner: body.owner
       }), { status: 201 });
@@ -316,18 +421,34 @@ const server = Bun.serve({
     }
 
     const latestRiskMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/risk\/latest$/);
+    const latestFatigueMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/fatigue\/latest$/);
+
+    if (request.method === 'GET' && latestFatigueMatch) {
+      return jsonResponse(getLatestFatigue(latestFatigueMatch[1]) ?? null);
+    }
 
     if (request.method === 'GET' && latestRiskMatch) {
       return jsonResponse(getLatestRisk(latestRiskMatch[1]) ?? null);
     }
 
     const riskHistoryMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/risk\/history$/);
+    const fatigueHistoryMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/fatigue\/history$/);
+
+    if (request.method === 'GET' && fatigueHistoryMatch) {
+      return jsonResponse(getFatigueHistory(fatigueHistoryMatch[1]));
+    }
 
     if (request.method === 'GET' && riskHistoryMatch) {
       return jsonResponse(getRiskHistory(riskHistoryMatch[1]));
     }
 
     const riskEvaluateMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/risk\/evaluate$/);
+    const fatigueEvaluateMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/fatigue\/evaluate$/);
+
+    if (request.method === 'POST' && fatigueEvaluateMatch) {
+      const fatigue = evaluateWorkerFatigue(fatigueEvaluateMatch[1]);
+      return fatigue ? jsonResponse(fatigue, { status: 201 }) : jsonResponse({ error: 'Worker has no assigned device' }, { status: 404 });
+    }
 
     if (request.method === 'POST' && riskEvaluateMatch) {
       const risk = evaluateWorkerRisk(riskEvaluateMatch[1]);

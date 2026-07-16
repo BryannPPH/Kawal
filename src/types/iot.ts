@@ -36,6 +36,7 @@ export type RestRequest = {
   status: string;
   requested_at: string;
   risk_score_at_request: number;
+  fatigue_score_at_request: number | null;
   decision: string | null;
   decision_reason: string | null;
   break_session_id: string | null;
@@ -69,11 +70,26 @@ export type RiskEvaluation = {
   evaluated_at: string;
 };
 
+export type FatigueEvaluation = {
+  id: string;
+  worker_id: string;
+  device_id: string | null;
+  task_id: string | null;
+  zone_id: string | null;
+  fatigue_score: number;
+  fatigue_level: string;
+  intervention: string;
+  break_minutes: number;
+  reasons: string;
+  evaluated_at: string;
+};
+
 export type IoTOverview = {
   devices: IoTDevice[];
   activeIncidents: IoTIncident[];
   restRequests: RestRequest[];
   commands: DeviceCommand[];
+  latestFatigue: FatigueEvaluation[];
   latestRisk: RiskEvaluation[];
 };
 

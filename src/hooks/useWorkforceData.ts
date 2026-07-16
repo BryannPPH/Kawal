@@ -87,6 +87,9 @@ export function useWorkforceData() {
     unit: string;
     deadline: string;
     priority: string;
+    temperatureC?: number | null;
+    humidityPct?: number | null;
+    workload: string;
     notes?: string;
     owner?: string;
   }) => {

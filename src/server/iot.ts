@@ -1,4 +1,6 @@
 import { db } from './database';
+import { computeFatigue } from './fatigueEngine';
+import type { FatigueEvaluation } from './fatigueEngine';
 
 export const topicPrefix = process.env.MQTT_TOPIC_PREFIX ?? 'construction/v1';
 const ackTimeoutMs = Number(process.env.MQTT_COMMAND_ACK_TIMEOUT_MS ?? 5000);
@@ -96,13 +98,13 @@ type EnvironmentReadingRow = {
   data_source: string;
 };
 
-type RiskEvaluation = {
+type LegacyRiskEvaluation = {
   riskScore: number;
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  intervention: 'NONE' | 'REST_RECOMMENDED' | 'REST_REQUIRED' | 'SOS_REQUIRED';
+  intervention: 'NONE' | 'REST_RECOMMENDED' | 'REST_REQUIRED';
   breakMinutes: number;
   reasons: string[];
-  policyVersion: 'risk-policy-v1';
+  policyVersion: 'fatigue-engine-v1';
 };
 
 export function parseTopic(topic: string): ParsedTopic | null {
@@ -174,74 +176,28 @@ export function validateEnvelope(value: unknown, topicDeviceId?: string): { ok: 
   return { ok: true, envelope: candidate as Envelope };
 }
 
-export function evaluateRisk(input: {
+export function evaluateFatigue(input: {
   continuousWorkMinutes?: number;
   taskWorkload?: string | null;
   temperatureC?: number | null;
   humidityPct?: number | null;
-  surfaceCondition?: string | null;
-  movementState?: string | null;
-  restrictedZoneDetected?: boolean;
-  currentEmergency?: boolean;
-}): RiskEvaluation {
-  let score = 12;
-  const reasons: string[] = [];
+  restHistoryMinutes?: number;
+  iotRestButton?: boolean;
+  iotSosButton?: boolean;
+}): FatigueEvaluation {
+  return computeFatigue({
+    temperatureC: input.temperatureC,
+    humidityPct: input.humidityPct,
+    continuousWorkMinutes: input.continuousWorkMinutes,
+    workloadLevel: input.taskWorkload,
+    restHistoryMinutes: input.restHistoryMinutes,
+    iotRestButton: input.iotRestButton,
+    iotSosButton: input.iotSosButton
+  });
+}
 
-  if ((input.continuousWorkMinutes ?? 0) >= 120) {
-    score += 24;
-    reasons.push('Continuous work exceeds configured limit');
-  }
-
-  if (input.taskWorkload?.toLowerCase() === 'high') {
-    score += 14;
-    reasons.push('Heavy workload');
-  }
-
-  if ((input.temperatureC ?? 0) >= 35) {
-    score += 22;
-    reasons.push('High ambient temperature');
-  } else if ((input.temperatureC ?? 0) >= 32) {
-    score += 12;
-    reasons.push('Elevated ambient temperature');
-  }
-
-  if ((input.humidityPct ?? 0) >= 80) {
-    score += 10;
-    reasons.push('High humidity');
-  }
-
-  if (input.surfaceCondition === 'WET' || input.surfaceCondition === 'MUDDY' || input.surfaceCondition === 'UNEVEN') {
-    score += 10;
-    reasons.push('Unsafe surface condition');
-  }
-
-  if (input.movementState === 'INACTIVE') {
-    score += 8;
-    reasons.push('Worker inactivity requires check-in');
-  }
-
-  if (input.restrictedZoneDetected) {
-    score += 28;
-    reasons.push('Restricted zone detected');
-  }
-
-  if (input.currentEmergency) {
-    score = Math.max(score, 95);
-    reasons.push('Worker emergency state is active');
-  }
-
-  const boundedScore = Math.min(100, score);
-  const riskLevel = boundedScore >= 85 ? 'CRITICAL' : boundedScore >= 65 ? 'HIGH' : boundedScore >= 40 ? 'MEDIUM' : 'LOW';
-  const intervention = riskLevel === 'CRITICAL' ? 'SOS_REQUIRED' : riskLevel === 'HIGH' ? 'REST_REQUIRED' : riskLevel === 'MEDIUM' ? 'REST_RECOMMENDED' : 'NONE';
-
-  return {
-    riskScore: boundedScore,
-    riskLevel,
-    intervention,
-    breakMinutes: riskLevel === 'CRITICAL' ? 20 : riskLevel === 'HIGH' ? 15 : riskLevel === 'MEDIUM' ? 10 : 0,
-    reasons: reasons.length ? reasons : ['Conditions are within configured MVP thresholds'],
-    policyVersion: 'risk-policy-v1'
-  };
+export function evaluateRisk(input: Parameters<typeof evaluateFatigue>[0]): LegacyRiskEvaluation {
+  return toLegacyRiskEvaluation(evaluateFatigue(input));
 }
 
 export function processIoTMessage(topic: string, rawPayload: string) {
@@ -398,7 +354,8 @@ export function getIoTOverview() {
     activeIncidents: db.query('SELECT * FROM emergency_incidents WHERE state != ? ORDER BY opened_at DESC').all('RESOLVED'),
     restRequests: db.query('SELECT * FROM rest_requests ORDER BY requested_at DESC LIMIT 20').all(),
     commands: db.query('SELECT * FROM device_commands ORDER BY issued_at DESC LIMIT 20').all(),
-    latestRisk: db.query('SELECT * FROM risk_evaluations ORDER BY evaluated_at DESC LIMIT 20').all()
+    latestFatigue: db.query('SELECT * FROM fatigue_evaluations ORDER BY evaluated_at DESC LIMIT 20').all(),
+    latestRisk: db.query('SELECT * FROM fatigue_evaluations ORDER BY evaluated_at DESC LIMIT 20').all()
   };
 }
 
@@ -573,30 +530,33 @@ export function updateIncidentState(incidentId: string, state: 'ACKNOWLEDGED' | 
   return getIncident(incidentId);
 }
 
-export function getLatestRisk(workerId: string) {
-  return db.query('SELECT * FROM risk_evaluations WHERE worker_id = ? ORDER BY evaluated_at DESC LIMIT 1').get(workerId);
+export function getLatestFatigue(workerId: string) {
+  return db.query('SELECT * FROM fatigue_evaluations WHERE worker_id = ? ORDER BY evaluated_at DESC LIMIT 1').get(workerId);
 }
 
-export function getRiskHistory(workerId: string) {
-  return db.query('SELECT * FROM risk_evaluations WHERE worker_id = ? ORDER BY evaluated_at DESC LIMIT 50').all(workerId);
+export function getFatigueHistory(workerId: string) {
+  return db.query('SELECT * FROM fatigue_evaluations WHERE worker_id = ? ORDER BY evaluated_at DESC LIMIT 50').all(workerId);
 }
 
-export function evaluateWorkerRisk(workerId: string) {
+export function evaluateWorkerFatigue(workerId: string) {
   const device = db.query<DeviceRow, [string]>('SELECT * FROM iot_devices WHERE assigned_worker_id = ? LIMIT 1').get(workerId);
   if (!device) return null;
 
   const environment = device.assigned_zone_id ? getCurrentEnvironmentByZone(device.assigned_zone_id) : null;
-  const risk = evaluateRisk({
+  const fatigue = evaluateFatigue({
     continuousWorkMinutes: 134,
     taskWorkload: 'High',
     temperatureC: environment?.temperature_c,
     humidityPct: environment?.humidity_pct,
-    surfaceCondition: environment?.surface_condition,
-    restrictedZoneDetected: Boolean(environment?.restricted_zone_detected)
+    restHistoryMinutes: getRecentRestMinutes(workerId)
   });
 
-  return persistRiskEvaluation(device, risk);
+  return persistFatigueEvaluation(device, fatigue);
 }
+
+export const getLatestRisk = getLatestFatigue;
+export const getRiskHistory = getFatigueHistory;
+export const evaluateWorkerRisk = evaluateWorkerFatigue;
 
 export function getDataReadiness(projectId: string) {
   const evaluatedAt = new Date().toISOString();
@@ -687,36 +647,36 @@ export function updateSiteConditions(input: {
     WHERE assigned_site_id = ? AND assigned_zone_id = ?
   `).all(input.siteId, input.zoneId);
 
-  const riskEvaluations = affectedDevices.map((device) => {
-    const risk = evaluateRisk({
+  const fatigueEvaluations = affectedDevices.map((device) => {
+    const fatigue = evaluateFatigue({
       continuousWorkMinutes: 134,
       taskWorkload: 'High',
       temperatureC: input.temperatureC,
       humidityPct: input.humidityPct,
-      surfaceCondition: input.surfaceCondition,
-      restrictedZoneDetected: input.restrictedZoneDetected
+      restHistoryMinutes: getRecentRestMinutes(device.assigned_worker_id)
     });
 
-    const riskRow = persistRiskEvaluation(device, risk);
+    const fatigueRow = persistFatigueEvaluation(device, fatigue);
 
-    if (risk.intervention === 'REST_REQUIRED' || risk.intervention === 'SOS_REQUIRED') {
+    if (fatigue.intervention === 'BREAK_REQUIRED') {
       createNotification(
-        'environment-risk-updated',
-        'Environment risk updated',
-        `${device.name} risk changed to ${risk.riskLevel}; scheduling recommendations should be reviewed.`,
-        risk.intervention === 'SOS_REQUIRED' ? 'danger' : 'warning',
+        'environment-fatigue-updated',
+        'Fatigue updated',
+        `${device.name} fatigue changed to ${fatigue.fatigueLevel}; break coverage should be reviewed.`,
+        'warning',
         device.assigned_worker_id
       );
     }
 
-    return riskRow;
+    return fatigueRow;
   });
 
   return {
     ok: true,
     currentEnvironment: getCurrentEnvironmentByZone(input.zoneId),
-    affectedRiskEvaluations: riskEvaluations,
-    schedulingRecommendation: riskEvaluations.some((risk) => risk.intervention !== 'NONE')
+    affectedRiskEvaluations: fatigueEvaluations,
+    affectedFatigueEvaluations: fatigueEvaluations,
+    schedulingRecommendation: fatigueEvaluations.some((fatigue) => fatigue.intervention !== 'NONE')
       ? 'Review assignment timing and break coverage for affected zone.'
       : 'No scheduling adjustment required by current deterministic policy.'
   };
@@ -797,25 +757,24 @@ function processEnvironmentTelemetry(envelope: Envelope, receivedAt: string, dev
     return { type: 'environment', valid: false, validationError };
   }
 
-  const risk = evaluateRisk({
+  const fatigue = evaluateFatigue({
     continuousWorkMinutes: 134,
     taskWorkload: 'High',
     temperatureC: numberOrNull(envelope.payload.temperatureC),
     humidityPct: numberOrNull(envelope.payload.humidityPct),
-    surfaceCondition: stringOrNull(envelope.payload.surfaceCondition),
-    restrictedZoneDetected: Boolean(envelope.payload.restrictedZoneDetected)
+    restHistoryMinutes: getRecentRestMinutes(device.assigned_worker_id)
   });
 
-  const riskRow = persistRiskEvaluation(device, risk);
+  const fatigueRow = persistFatigueEvaluation(device, fatigue);
 
-  if (risk.intervention === 'REST_REQUIRED') {
+  if (fatigue.intervention === 'BREAK_REQUIRED') {
     const breakSession = createBreakSession({
       workerId: device.assigned_worker_id ?? 'unknown-worker',
       taskId: device.assigned_task_id,
       deviceId: device.id,
-      source: 'RISK_POLICY',
-      plannedMinutes: risk.breakMinutes,
-      riskEvaluationId: riskRow.id
+      source: 'FATIGUE_ENGINE',
+      plannedMinutes: fatigue.breakMinutes,
+      riskEvaluationId: fatigueRow.id
     });
     db.prepare('UPDATE workers SET status = ? WHERE id = ?').run('break', device.assigned_worker_id);
     publishDeviceCommand({
@@ -824,18 +783,18 @@ function processEnvironmentTelemetry(envelope: Envelope, receivedAt: string, dev
       priority: 'HIGH',
       payload: {
         breakSessionId: breakSession.id,
-        breakMinutes: risk.breakMinutes,
+        breakMinutes: fatigue.breakMinutes,
         buzzerPattern: 'REST_REQUIRED',
-        displayMessage: 'Rest required by site safety policy'
+        displayMessage: 'Break required by Fatigue Engine'
       },
       relatedWorkerId: device.assigned_worker_id,
       relatedTaskId: device.assigned_task_id,
       relatedBreakSessionId: breakSession.id
     });
-    createNotification('iot-rest-required', 'Rest required', `${device.name} crossed the configured rest threshold.`, 'warning', device.assigned_worker_id);
+    createNotification('iot-break-required', 'Break required', `${device.name} crossed the Fatigue Engine threshold.`, 'warning', device.assigned_worker_id);
   }
 
-  return { type: 'environment', valid: true, risk };
+  return { type: 'environment', valid: true, fatigue, risk: toLegacyRiskEvaluation(fatigue) };
 }
 
 function processMotionTelemetry(envelope: Envelope, receivedAt: string, device: DeviceRow) {
@@ -927,13 +886,13 @@ function processRestRequest(envelope: Envelope, receivedAt: string, device: Devi
   persistDeviceEvent(envelope, receivedAt, device);
   const environment = device.assigned_zone_id ? getCurrentEnvironmentByZone(device.assigned_zone_id) : null;
   const sensor = db.query('SELECT * FROM motion_telemetry_summaries WHERE device_id = ? ORDER BY window_end DESC LIMIT 1').get(device.id);
-  const risk = evaluateRisk({
+  const fatigue = evaluateFatigue({
     continuousWorkMinutes: 134,
     taskWorkload: 'High',
     temperatureC: environment?.temperature_c,
     humidityPct: environment?.humidity_pct,
-    surfaceCondition: environment?.surface_condition,
-    restrictedZoneDetected: Boolean(environment?.restricted_zone_detected)
+    restHistoryMinutes: getRecentRestMinutes(device.assigned_worker_id),
+    iotRestButton: true
   });
   const requestId = crypto.randomUUID();
   const autoApprove = true;
@@ -943,16 +902,16 @@ function processRestRequest(envelope: Envelope, receivedAt: string, device: Devi
         taskId: device.assigned_task_id,
         deviceId: device.id,
         source: 'WORKER_REQUEST',
-        plannedMinutes: risk.breakMinutes || 10
+        plannedMinutes: fatigue.breakMinutes || 10
       })
     : null;
 
   db.prepare(`
     INSERT INTO rest_requests (
       id, worker_id, device_id, task_id, zone_id, source, status, requested_at,
-      risk_score_at_request, environment_snapshot, sensor_snapshot, decision,
+      risk_score_at_request, fatigue_score_at_request, environment_snapshot, sensor_snapshot, decision,
       decision_reason, decided_by, decided_at, break_session_id
-    ) VALUES (?, ?, ?, ?, ?, 'IOT_REST_BUTTON', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, 'IOT_REST_BUTTON', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     requestId,
     device.assigned_worker_id ?? 'unknown-worker',
@@ -961,11 +920,12 @@ function processRestRequest(envelope: Envelope, receivedAt: string, device: Devi
     device.assigned_zone_id,
     autoApprove ? 'AUTO_APPROVED' : 'REQUESTED',
     receivedAt,
-    risk.riskScore,
+    fatigue.fatigueScore,
+    fatigue.fatigueScore,
     JSON.stringify(environment),
     JSON.stringify(sensor),
     autoApprove ? 'APPROVED' : null,
-    autoApprove ? 'Worker-requested rest is auto-approved by MVP policy' : null,
+    autoApprove ? 'Worker-requested rest is auto-approved by Fatigue Engine policy' : null,
     autoApprove ? 'SYSTEM' : null,
     autoApprove ? receivedAt : null,
     breakSession?.id ?? null
@@ -1117,7 +1077,32 @@ function persistDeviceEvent(envelope: Envelope, receivedAt: string, device: Devi
   );
 }
 
-function persistRiskEvaluation(device: DeviceRow, risk: RiskEvaluation) {
+function persistFatigueEvaluation(device: DeviceRow, fatigue: FatigueEvaluation) {
+  const id = crypto.randomUUID();
+  db.prepare(`
+    INSERT INTO fatigue_evaluations (
+      id, worker_id, device_id, task_id, zone_id, fatigue_score, fatigue_level,
+      intervention, break_minutes, reasons, policy_version, evaluated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    device.assigned_worker_id ?? 'unknown-worker',
+    device.id,
+    device.assigned_task_id,
+    device.assigned_zone_id,
+    fatigue.fatigueScore,
+    fatigue.fatigueLevel,
+    fatigue.intervention,
+    fatigue.breakMinutes,
+    JSON.stringify(fatigue.reasons),
+    fatigue.policyVersion,
+    new Date().toISOString()
+  );
+
+  return { id, ...fatigue };
+}
+
+function persistRiskEvaluation(device: DeviceRow, risk: LegacyRiskEvaluation) {
   const id = crypto.randomUUID();
   db.prepare(`
     INSERT INTO risk_evaluations (
@@ -1140,6 +1125,34 @@ function persistRiskEvaluation(device: DeviceRow, risk: RiskEvaluation) {
   );
 
   return { id, ...risk };
+}
+
+function getRecentRestMinutes(workerId?: string | null) {
+  if (!workerId) return 0;
+
+  const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
+  return db.query<{ minutes: number }, [string, string]>(`
+    SELECT COALESCE(SUM(planned_minutes), 0) as minutes
+    FROM break_sessions
+    WHERE worker_id = ? AND started_at >= ?
+  `).get(workerId, eightHoursAgo)?.minutes ?? 0;
+}
+
+function toLegacyRiskEvaluation(fatigue: FatigueEvaluation): LegacyRiskEvaluation {
+  const intervention = fatigue.intervention === 'BREAK_REQUIRED'
+    ? 'REST_REQUIRED'
+    : fatigue.intervention === 'BREAK_RECOMMENDED'
+      ? 'REST_RECOMMENDED'
+      : 'NONE';
+
+  return {
+    riskScore: fatigue.fatigueScore,
+    riskLevel: fatigue.fatigueLevel,
+    intervention,
+    breakMinutes: fatigue.breakMinutes,
+    reasons: fatigue.reasons,
+    policyVersion: fatigue.policyVersion
+  };
 }
 
 function createBreakSession(input: {

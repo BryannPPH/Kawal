@@ -15,7 +15,7 @@ export function PayrollView({ workers }: { workers: Worker[] }) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Payroll Detail</p>
-            <p className="mt-1 text-sm text-[#776B63]">Worker earnings by assignment, status, and fatigue risk.</p>
+            <p className="mt-1 text-sm text-[#776B63]">Worker earnings by assignment, status, and fatigue score.</p>
           </div>
           <p className="text-sm font-semibold text-[#FD7124]">Today</p>
         </div>

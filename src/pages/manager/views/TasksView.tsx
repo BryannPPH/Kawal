@@ -39,16 +39,24 @@ export function TasksView({ tasks }: { tasks: Task[] }) {
 
                 <div className="mt-4 grid gap-3 md:grid-cols-4">
                   <Info label="Quantity" value={`${task.quantity} ${task.unit}`} />
-                  <Info label="Workers" value={String(task.schedulerRecommendation.recommendedWorkerCount)} />
-                  <Info label="Duration" value={task.schedulerRecommendation.estimatedTaskDuration} />
+                  <Info label="Workload" value={task.workload || '-'} />
+                  <Info label="Temp / Humidity" value={`${task.temperatureC ?? '-'}C / ${task.humidityPct ?? '-'}%`} />
+                  <Info label="Worker-hours" value={String(task.schedulerRecommendation.totalWorkerHours)} />
+                  <Info label="Crew size" value={String(task.schedulerRecommendation.recommendedCrewSize)} />
+                  <Info label="Duration" value={task.schedulerRecommendation.estimatedDuration} />
                   <Info label="Feasibility" value={task.schedulerRecommendation.deadlineFeasibilityStatus} />
                 </div>
 
                 <div className="mt-4 rounded-md bg-[#FFF8F4] p-3">
-                  <p className="text-xs font-semibold uppercase text-[#A09188]">Scheduler Placeholder</p>
+                  <p className="text-xs font-semibold uppercase text-[#A09188]">Scheduler Engines</p>
                   <p className="mt-2 text-sm leading-6 text-[#776B63]">
-                    Start {task.schedulerRecommendation.recommendedStartTime}; complete {task.schedulerRecommendation.estimatedCompletionTime}; productivity {task.schedulerRecommendation.expectedProductivityRate}.
+                    Start {task.schedulerRecommendation.recommendedStartTime}; finish {formatFinishTime(task.schedulerRecommendation.estimatedFinishTime)}; productivity {task.schedulerRecommendation.expectedProductivityRate}.
                   </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <Info label="Chronos productivity" value={task.schedulerRecommendation.chronosForecast.futureProductivity} />
+                    <Info label="Delay prediction" value={task.schedulerRecommendation.chronosForecast.delayPrediction} />
+                    <Info label="Add crew" value={String(task.schedulerRecommendation.chronosForecast.suggestedAdditionalCrew)} />
+                  </div>
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
                     {task.schedulerRecommendation.selectedWorkerRecommendations.map((worker) => (
                       <div key={worker.workerId} className="rounded-md border border-[#F3D7C8] bg-white px-3 py-2">
@@ -57,6 +65,9 @@ export function TasksView({ tasks }: { tasks: Task[] }) {
                       </div>
                     ))}
                   </div>
+                  <p className="mt-3 text-xs font-semibold text-[#776B63]">
+                    Model status: {task.schedulerRecommendation.chronosForecast.modelStatus === 'UNAVAILABLE' ? 'Failed' : 'Ready'} / Forecast confidence: {task.schedulerRecommendation.chronosForecast.confidence ?? 'INFERRED'}
+                  </p>
                   <p className="mt-3 text-xs font-semibold text-[#C95119]">{task.schedulerRecommendation.schedulerStatus}</p>
                 </div>
               </div>
@@ -77,4 +88,19 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="mt-1 truncate text-sm font-semibold text-[#2F2C2A]">{value}</p>
     </div>
   );
+}
+
+function formatFinishTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
 }

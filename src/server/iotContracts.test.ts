@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateDeterministicRisk, parseIoTTopic, validateIoTEnvelope } from './iotContracts';
+import { evaluateDeterministicFatigue, parseIoTTopic, validateIoTEnvelope } from './iotContracts';
 
 const validEnvelope = {
   schemaVersion: '1.0',
@@ -42,21 +42,34 @@ describe('IoT contracts', () => {
     });
   });
 
-  it('returns deterministic rest intervention decisions for high-risk work', () => {
-    const decision = evaluateDeterministicRisk({
+  it('returns deterministic break intervention decisions for high-fatigue work', () => {
+    const decision = evaluateDeterministicFatigue({
       continuousWorkMinutes: 140,
       taskWorkload: 'High',
       temperatureC: 35.5,
-      humidityPct: 72,
-      surfaceCondition: 'WET'
+      humidityPct: 82
     });
 
     expect(decision).toMatchObject({
-      riskLevel: 'HIGH',
-      intervention: 'REST_REQUIRED',
-      breakMinutes: 15,
-      policyVersion: 'risk-policy-v1'
+      fatigueLevel: 'CRITICAL',
+      intervention: 'BREAK_REQUIRED',
+      breakMinutes: 20,
+      policyVersion: 'fatigue-engine-v1'
     });
-    expect(decision.reasons).toContain('High ambient temperature');
+    expect(decision.reasons).toContain('High temperature increases fatigue load');
+  });
+
+  it('keeps SOS separate from fatigue intervention logic', () => {
+    const decision = evaluateDeterministicFatigue({
+      continuousWorkMinutes: 20,
+      taskWorkload: 'Low',
+      temperatureC: 27,
+      humidityPct: 55,
+      restHistoryMinutes: 25,
+      iotSosButton: true
+    });
+
+    expect(decision.intervention).toBe('NONE');
+    expect(decision.reasons).toContain('IoT SOS is handled by Incident Center, not Fatigue Engine');
   });
 });

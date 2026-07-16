@@ -26,7 +26,8 @@ The backend now stores and processes IoT data through deterministic rules:
 - `rest_requests`
 - `break_sessions`
 - `emergency_incidents`
-- `risk_evaluations`
+- `fatigue_evaluations`
+- `risk_evaluations` legacy compatibility table
 - `data_collection_status`
 
 The MVP has a seeded device:
@@ -63,7 +64,7 @@ The current prototype records command publication in SQLite. A physical MQTT bri
 
 ## Deterministic Policy Boundary
 
-No ML model is used for SOS, rest approval, buzzer command delivery, command acknowledgement, or emergency state. Risk decisions use `risk-policy-v1` and store the score, intervention, break duration, and reasons.
+No ML model is used for SOS, rest approval, buzzer command delivery, command acknowledgement, or emergency state. Fatigue decisions use `fatigue-engine-v1` and store the fatigue score, intervention, break duration, and reasons. SOS button events are handled by the Incident Center and are not used as Fatigue Engine inputs.
 
 ## Local Simulation
 
@@ -93,7 +94,7 @@ Useful API checks:
 curl http://127.0.0.1:3001/api/iot/overview
 curl http://127.0.0.1:3001/api/incidents/active
 curl http://127.0.0.1:3001/api/rest-requests
-curl http://127.0.0.1:3001/api/workers/budi/risk/latest
+curl http://127.0.0.1:3001/api/workers/budi/fatigue/latest
 ```
 
 ## Development Plan
@@ -106,7 +107,7 @@ curl http://127.0.0.1:3001/api/workers/budi/risk/latest
    - Environment and motion persistence.
    - Manual SOS incident flow.
    - Manual rest request flow.
-   - Deterministic risk policy.
+   - Deterministic Fatigue Engine.
    - Buzzer/rest command records.
    - Command ack/result handling.
    - Heartbeat/offline maintenance.

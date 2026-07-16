@@ -27,7 +27,16 @@ export type RiskEvaluation = {
   intervention: 'NONE' | 'REST_RECOMMENDED' | 'REST_REQUIRED' | 'SOS_REQUIRED';
   breakMinutes: number;
   reasons: string[];
-  policyVersion: 'risk-policy-v1';
+  policyVersion: 'fatigue-engine-v1';
+};
+
+export type FatigueEvaluation = {
+  fatigueScore: number;
+  fatigueLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  intervention: 'NONE' | 'BREAK_RECOMMENDED' | 'BREAK_REQUIRED';
+  breakMinutes: number;
+  reasons: string[];
+  policyVersion: 'fatigue-engine-v1';
 };
 
 export function parseIoTTopic(topic: string, topicPrefix = defaultTopicPrefix): ParsedTopic | null {
@@ -99,73 +108,95 @@ export function validateIoTEnvelope(value: unknown, topicDeviceId?: string): { o
   return { ok: true, envelope: candidate as Envelope };
 }
 
-export function evaluateDeterministicRisk(input: {
+export function evaluateDeterministicFatigue(input: {
   continuousWorkMinutes?: number;
   taskWorkload?: string | null;
   temperatureC?: number | null;
   humidityPct?: number | null;
-  surfaceCondition?: string | null;
-  movementState?: string | null;
-  restrictedZoneDetected?: boolean;
-  currentEmergency?: boolean;
-}): RiskEvaluation {
-  let score = 12;
+  restHistoryMinutes?: number;
+  iotRestButton?: boolean;
+  iotSosButton?: boolean;
+}): FatigueEvaluation {
+  let score = 10;
   const reasons: string[] = [];
 
-  if ((input.continuousWorkMinutes ?? 0) >= 120) {
-    score += 24;
-    reasons.push('Continuous work exceeds configured limit');
+  if ((input.continuousWorkMinutes ?? 0) >= 180) {
+    score += 32;
+    reasons.push('Continuous work duration exceeds 180 minutes');
+  } else if ((input.continuousWorkMinutes ?? 0) >= 120) {
+    score += 22;
+    reasons.push('Continuous work duration exceeds 120 minutes');
+  } else if ((input.continuousWorkMinutes ?? 0) >= 90) {
+    score += 12;
+    reasons.push('Continuous work duration exceeds 90 minutes');
   }
 
   if (input.taskWorkload?.toLowerCase() === 'high') {
-    score += 14;
-    reasons.push('Heavy workload');
+    score += 18;
+    reasons.push('High workload level');
+  } else if (input.taskWorkload?.toLowerCase() === 'medium') {
+    score += 8;
+    reasons.push('Medium workload level');
   }
 
   if ((input.temperatureC ?? 0) >= 35) {
-    score += 22;
-    reasons.push('High ambient temperature');
+    score += 20;
+    reasons.push('High temperature increases fatigue load');
   } else if ((input.temperatureC ?? 0) >= 32) {
-    score += 12;
-    reasons.push('Elevated ambient temperature');
+    score += 10;
+    reasons.push('Elevated temperature increases fatigue load');
   }
 
   if ((input.humidityPct ?? 0) >= 80) {
     score += 10;
-    reasons.push('High humidity');
+    reasons.push('High humidity increases fatigue load');
   }
 
-  if (input.surfaceCondition === 'WET' || input.surfaceCondition === 'MUDDY' || input.surfaceCondition === 'UNEVEN') {
-    score += 10;
-    reasons.push('Unsafe surface condition');
-  }
-
-  if (input.movementState === 'INACTIVE') {
+  if ((input.restHistoryMinutes ?? 0) >= 20) {
+    score -= 14;
+    reasons.push('Recent rest history reduces fatigue score');
+  } else if ((input.restHistoryMinutes ?? 0) === 0) {
     score += 8;
-    reasons.push('Worker inactivity requires check-in');
+    reasons.push('No recent rest history recorded');
   }
 
-  if (input.restrictedZoneDetected) {
-    score += 28;
-    reasons.push('Restricted zone detected');
+  if (input.iotRestButton) {
+    score = Math.max(score, 70);
+    reasons.push('Worker pressed IoT rest button');
   }
 
-  if (input.currentEmergency) {
-    score = Math.max(score, 95);
-    reasons.push('Worker emergency state is active');
+  if (input.iotSosButton) {
+    reasons.push('IoT SOS is handled by Incident Center, not Fatigue Engine');
   }
 
-  const boundedScore = Math.min(100, score);
-  const riskLevel = boundedScore >= 85 ? 'CRITICAL' : boundedScore >= 65 ? 'HIGH' : boundedScore >= 40 ? 'MEDIUM' : 'LOW';
-  const intervention = riskLevel === 'CRITICAL' ? 'SOS_REQUIRED' : riskLevel === 'HIGH' ? 'REST_REQUIRED' : riskLevel === 'MEDIUM' ? 'REST_RECOMMENDED' : 'NONE';
+  const fatigueScore = Math.max(0, Math.min(100, Math.round(score)));
+  const fatigueLevel = fatigueScore >= 85 ? 'CRITICAL' : fatigueScore >= 65 ? 'HIGH' : fatigueScore >= 40 ? 'MEDIUM' : 'LOW';
+  const intervention = fatigueLevel === 'CRITICAL' || fatigueLevel === 'HIGH' ? 'BREAK_REQUIRED' : fatigueLevel === 'MEDIUM' ? 'BREAK_RECOMMENDED' : 'NONE';
 
   return {
-    riskScore: boundedScore,
-    riskLevel,
+    fatigueScore,
+    fatigueLevel,
     intervention,
-    breakMinutes: riskLevel === 'CRITICAL' ? 20 : riskLevel === 'HIGH' ? 15 : riskLevel === 'MEDIUM' ? 10 : 0,
-    reasons: reasons.length ? reasons : ['Conditions are within configured MVP thresholds'],
-    policyVersion: 'risk-policy-v1'
+    breakMinutes: fatigueLevel === 'CRITICAL' ? 20 : fatigueLevel === 'HIGH' ? 15 : fatigueLevel === 'MEDIUM' ? 10 : 0,
+    reasons: reasons.length ? reasons : ['Fatigue inputs are within configured thresholds'],
+    policyVersion: 'fatigue-engine-v1'
+  };
+}
+
+export function evaluateDeterministicRisk(input: Parameters<typeof evaluateDeterministicFatigue>[0]): RiskEvaluation {
+  const fatigue = evaluateDeterministicFatigue(input);
+  const intervention = fatigue.intervention === 'BREAK_REQUIRED'
+    ? 'REST_REQUIRED'
+    : fatigue.intervention === 'BREAK_RECOMMENDED'
+      ? 'REST_RECOMMENDED'
+      : 'NONE';
+  return {
+    riskScore: fatigue.fatigueScore,
+    riskLevel: fatigue.fatigueLevel,
+    intervention,
+    breakMinutes: fatigue.breakMinutes,
+    reasons: fatigue.reasons,
+    policyVersion: fatigue.policyVersion
   };
 }
 

@@ -15,7 +15,7 @@ const metrics = [
   { label: 'Active Workers', value: '84', detail: '11 currently on break', icon: Users },
   { label: 'Open Tasks', value: '128', detail: '14 waiting review', icon: ClipboardList },
   { label: 'Completion', value: '67%', detail: 'Today across all zones', icon: Check },
-  { label: 'High Risk', value: '6', detail: '2 fewer than yesterday', icon: ShieldAlert }
+  { label: 'High Fatigue', value: '6', detail: '2 fewer than yesterday', icon: ShieldAlert }
 ];
 
 export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }: DashboardViewProps) {

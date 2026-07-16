@@ -19,21 +19,37 @@ export type Worker = {
 };
 
 export type SchedulerRecommendation = {
+  totalWorkerHours: number;
   recommendedWorkerCount: number;
+  recommendedCrewSize: number;
   estimatedTaskDuration: string;
+  estimatedDuration: string;
   recommendedStartTime: string;
   estimatedCompletionTime: string;
+  estimatedFinishTime: string;
   selectedWorkerRecommendations: Array<{
     workerId: string;
     workerName: string;
     explanation: string;
   }>;
+  assignmentEngineVersion: string;
   expectedProductivityRate: string;
   deadlineFeasibilityStatus: string;
+  capacityEstimatorVersion: string;
   requiredPpeAndCertifications: string[];
   dependencyStatus: string;
   currentEnvironmentalConditions: string;
   safetyAndOperationalWarnings: string[];
+  chronosForecast: {
+    futureProductivity: string;
+    delayPrediction: string;
+    suggestedAdditionalCrew: number;
+    forecastVersion: string;
+    confidence?: 'COLD_START' | 'INFERRED' | 'HISTORICAL';
+    model?: string;
+    modelStatus?: 'READY' | 'UNAVAILABLE';
+    forecastValues?: number[];
+  };
   schedulerStatus: string;
 };
 
@@ -49,6 +65,9 @@ export type Task = {
   unit: string;
   deadline: string;
   priority: string;
+  temperatureC: number | null;
+  humidityPct: number | null;
+  workload: string;
   notes: string;
   schedulerRecommendation: SchedulerRecommendation;
   status: string;

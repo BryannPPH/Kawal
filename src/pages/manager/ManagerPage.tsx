@@ -30,6 +30,9 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const [taskUnit, setTaskUnit] = useState('');
   const [taskDeadline, setTaskDeadline] = useState('');
   const [taskPriority, setTaskPriority] = useState('');
+  const [taskTemperatureC, setTaskTemperatureC] = useState('');
+  const [taskHumidityPct, setTaskHumidityPct] = useState('');
+  const [taskWorkload, setTaskWorkload] = useState('');
   const [taskNotes, setTaskNotes] = useState('');
   const [taskOwner, setTaskOwner] = useState('');
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -62,6 +65,9 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
         unit: taskUnit,
         deadline: taskDeadline,
         priority: taskPriority,
+        temperatureC: taskTemperatureC ? Number(taskTemperatureC) : null,
+        humidityPct: taskHumidityPct ? Number(taskHumidityPct) : null,
+        workload: taskWorkload,
         notes: taskNotes,
         owner: taskOwner
       });
@@ -72,6 +78,9 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
       setTaskUnit('');
       setTaskDeadline('');
       setTaskPriority('');
+      setTaskTemperatureC('');
+      setTaskHumidityPct('');
+      setTaskWorkload('');
       setTaskNotes('');
       setTaskOwner('');
       setCreateTaskOpen(false);
@@ -222,7 +231,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-semibold text-[#2F2C2A]">Create Task</p>
-                <p className="mt-1 text-sm text-[#776B63]">Capture the task workflow, then review the placeholder scheduler recommendation in Tasks.</p>
+                <p className="mt-1 text-sm text-[#776B63]">Capture the task workflow, then review the live scheduler recommendation in Tasks.</p>
               </div>
               <button
                 type="button"
@@ -270,6 +279,23 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                   <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)} className="field-input mt-2" required>
                     <option value="">Select priority</option>
                     {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority}>{priority}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Temperature</span>
+                  <input value={taskTemperatureC} onChange={(event) => setTaskTemperatureC(event.target.value)} type="number" className="field-input mt-2" placeholder="Celsius" />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Humidity</span>
+                  <input value={taskHumidityPct} onChange={(event) => setTaskHumidityPct(event.target.value)} type="number" min="0" max="100" className="field-input mt-2" placeholder="%" />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Workload</span>
+                  <select value={taskWorkload} onChange={(event) => setTaskWorkload(event.target.value)} className="field-input mt-2" required>
+                    <option value="">Select workload</option>
+                    {['Low', 'Medium', 'High'].map((workload) => <option key={workload}>{workload}</option>)}
                   </select>
                 </label>
               </div>
