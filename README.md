@@ -1,4 +1,4 @@
-# Garudie Workforce
+# Kawal
 
 React + TypeScript dashboard with a Bun API backend and SQLite or Supabase data source for workforce assignment, task tracking, notifications, IoT safety telemetry, and payroll review.
 

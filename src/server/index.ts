@@ -414,7 +414,7 @@ const server = Bun.serve({
   }
 });
 
-console.log(`Garudie API listening on http://${server.hostname}:${server.port}`);
+console.log(`Kawal API listening on http://${server.hostname}:${server.port}`);
 
 async function readJsonBody<T>(request: Request): Promise<T> {
   try {

@@ -1,4 +1,4 @@
-# Garudie IoT Backend MVP
+# Kawal IoT Backend MVP
 
 ## Current Repository Audit
 

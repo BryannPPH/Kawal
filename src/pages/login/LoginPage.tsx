@@ -1,6 +1,7 @@
-import { HardHat, Lock, Mail } from 'lucide-react';
+import { Lock, Mail } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import kawalLogo from '../../assets/kawal-logo.svg';
 
 type LoginPageProps = {
   onLogin: (email: string, password: string) => Promise<string | null>;
@@ -30,12 +31,11 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <section className="grid min-h-screen place-items-center bg-[#F1F2F7] px-4 py-8">
       <div className="w-full max-w-[430px] rounded-lg border border-[#F3D7C8] bg-white p-6 shadow-[0_24px_80px_rgba(76,48,35,0.12)]">
         <div className="flex items-center gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-lg bg-[#FD7124] text-white">
-            <HardHat size={20} />
+          <span className="grid h-11 w-11 place-items-center">
+            <img src={kawalLogo} alt="Kawal logo" className="h-11 w-11 object-contain" />
           </span>
           <div>
-            <p className="text-lg font-bold text-[#2F2C2A]">GARUDIE</p>
-            <p className="text-sm text-[#776B63]">Workforce OS</p>
+            <p className="text-3xl font-bold leading-none text-[#2F2C2A]">Kawal</p>
           </div>
         </div>
 
