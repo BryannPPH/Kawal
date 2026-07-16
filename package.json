@@ -8,7 +8,7 @@
     "dev": "bun run scripts/dev.ts",
     "dev:frontend": "vite --strictPort",
     "dev:api": "bun --watch src/server/index.ts",
-    "dev:chronos": ".venv/bin/python.exe -m uvicorn services.chronos_api.main:app --host 127.0.0.1 --port 8001",
+    "dev:chronos": "bun run scripts/dev-chronos.ts",
     "db:seed": "bun run src/server/seed.ts",
     "simulate": "bun run scripts/simulate-iot.ts",
     "build": "tsc -b && vite build",
