@@ -26,11 +26,12 @@ export function TasksView({ tasks }: { tasks: Task[] }) {
 
           <div className="mt-5 space-y-3">
             {tasks.map((task) => (
-              <div key={task.id} className="grid gap-3 rounded-lg border border-[#F3D7C8] p-4 md:grid-cols-[minmax(0,1fr)_130px_110px] md:items-center">
+              <div key={task.id} className="grid gap-3 rounded-lg border border-[#F3D7C8] p-4 md:grid-cols-[minmax(0,1fr)_130px_110px_110px] md:items-center">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.title}</p>
                   <p className="mt-1 text-sm text-[#776B63]">{task.owner}</p>
                 </div>
+                <p className="text-sm font-semibold text-[#5F5A56]">{task.location}</p>
                 <Pill className={toneStyles[task.tone]}>{task.status}</Pill>
                 <p className="text-sm font-semibold text-[#5F5A56]">Due {task.due}</p>
               </div>

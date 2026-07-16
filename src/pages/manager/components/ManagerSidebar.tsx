@@ -1,11 +1,13 @@
-import { ClipboardList, HardHat, LayoutDashboard, TimerReset, Users, WalletCards } from 'lucide-react';
+import { ClipboardList, HardHat, LayoutDashboard, Radio, ShieldAlert, TimerReset, Users, WalletCards } from 'lucide-react';
 import type { ManagerSection } from '../../../types/navigation';
 
 const managerMenu = [
   { label: 'Dashboard', section: 'dashboard', icon: LayoutDashboard },
   { label: 'Workers', section: 'workers', icon: Users },
   { label: 'Tasks', section: 'tasks', icon: ClipboardList },
-  { label: 'Payroll', section: 'payroll', icon: WalletCards }
+  { label: 'Payroll', section: 'payroll', icon: WalletCards },
+  { label: 'IoT Panel', section: 'iot', icon: Radio },
+  { label: 'Incident Center', section: 'incidents', icon: ShieldAlert }
  ] satisfies Array<{
   label: string;
   section: ManagerSection;

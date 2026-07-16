@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { notifications as fallbackNotifications, tasks as fallbackTasks, workers as fallbackWorkers } from '../constants/workforce';
-import type { Notification, WorkforceData } from '../types/workforce';
+import type { Notification, Task, WorkforceData } from '../types/workforce';
 
 const fallbackData: WorkforceData = {
   workers: fallbackWorkers,
@@ -79,10 +79,40 @@ export function useWorkforceData() {
     }
   };
 
+  const createTask = async (input: { title: string; owner?: string; location: string; due?: string }) => {
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(input)
+    });
+
+    const payload = (await response.json()) as Task | { error?: string };
+
+    if (!response.ok || isTaskError(payload)) {
+      throw new Error('error' in payload ? payload.error ?? 'Unable to create task' : 'Unable to create task');
+    }
+
+    const createdTask = payload;
+
+    setData((current) => ({
+      ...current,
+      tasks: [...current.tasks, createdTask]
+    }));
+
+    return createdTask;
+  };
+
   return {
     ...data,
     loading,
     error,
-    markNotificationRead
+    markNotificationRead,
+    createTask
   };
+}
+
+function isTaskError(payload: Task | { error?: string }): payload is { error?: string } {
+  return 'error' in payload;
 }

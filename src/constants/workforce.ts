@@ -82,10 +82,10 @@ export const workers: Worker[] = [
 ];
 
 export const tasks: Task[] = [
-  { id: 'steel-beam-install', title: 'Steel beam install', owner: 'Budi Santoso', status: 'In progress', due: '2h 15m', tone: 'warning' },
-  { id: 'harness-audit', title: 'Harness audit', owner: 'Dewi Lestari', status: 'Assigned', due: '45m', tone: 'neutral' },
-  { id: 'scaffold-photo-proof', title: 'Scaffold photo proof', owner: 'Dimas Ardi', status: 'Review', due: 'Ready', tone: 'success' },
-  { id: 'wet-surface-cleanup', title: 'Wet surface cleanup', owner: 'Unassigned', status: 'Open', due: '30m', tone: 'danger' }
+  { id: 'steel-beam-install', title: 'Steel beam install', owner: 'Budi Santoso', location: 'Zone C', status: 'In progress', due: '2h 15m', tone: 'warning' },
+  { id: 'harness-audit', title: 'Harness audit', owner: 'Dewi Lestari', location: 'Zone B', status: 'Assigned', due: '45m', tone: 'neutral' },
+  { id: 'scaffold-photo-proof', title: 'Scaffold photo proof', owner: 'Dimas Ardi', location: 'Zone A', status: 'Review', due: 'Ready', tone: 'success' },
+  { id: 'wet-surface-cleanup', title: 'Wet surface cleanup', owner: 'Unassigned', location: 'Zone C', status: 'Open', due: '30m', tone: 'danger' }
 ];
 
 export const notifications: Notification[] = [
@@ -123,7 +123,8 @@ export const statusLabels: Record<WorkerStatus, string> = {
   waiting: 'Waiting',
   working: 'Working',
   break: 'On Break',
-  done: 'Done'
+  done: 'Done',
+  emergency: 'Emergency'
 };
 
 export const toneStyles: Record<Tone, string> = {
@@ -137,5 +138,6 @@ export const statusStyles: Record<WorkerStatus, string> = {
   waiting: 'bg-[#F1F2F7] text-[#5F5A56]',
   working: 'bg-[#FFEFE6] text-[#C95119]',
   break: 'bg-[#FFF4DC] text-[#8A4B02]',
-  done: 'bg-[#FFF7ED] text-[#7A4B22]'
+  done: 'bg-[#FFF7ED] text-[#7A4B22]',
+  emergency: 'bg-[#FFEFE6] text-[#B84011]'
 };

@@ -9,6 +9,7 @@
     "dev:frontend": "vite --strictPort",
     "dev:api": "bun --watch src/server/index.ts",
     "db:seed": "bun run src/server/seed.ts",
+    "simulate": "bun run scripts/simulate-iot.ts",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest"

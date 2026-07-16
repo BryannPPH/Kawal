@@ -1,10 +1,13 @@
 import { Bell, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useWorkforceData } from '../../hooks/useWorkforceData';
 import type { ManagerSection } from '../../types/navigation';
 import { ManagerSidebar } from './components/ManagerSidebar';
 import { DashboardView } from './views/DashboardView';
+import { IncidentCenterView } from './views/IncidentCenterView';
+import { IoTView } from './views/IoTView';
 import { PayrollView } from './views/PayrollView';
 import { TasksView } from './views/TasksView';
 import { WorkersView } from './views/WorkersView';
@@ -37,13 +40,25 @@ const managerSectionMeta: Record<ManagerSection, { title: string; description: s
     description: 'Review shift earnings, bonus eligibility, and payout readiness.',
     eyebrow: 'Compensation',
     path: '/manager/payroll'
+  },
+  iot: {
+    title: 'IoT Panel',
+    description: 'Monitor wearable connectivity, SOS incidents, rest commands, and risk policy state.',
+    eyebrow: 'Device Safety',
+    path: '/manager/iot'
+  },
+  incidents: {
+    title: 'Incident Center',
+    description: 'Monitor SOS alerts, near-miss reports, emergency history, and escalation actions.',
+    eyebrow: 'FR-SOS / FR-INC',
+    path: '/manager/incidents'
   }
 };
 
 function getManagerSectionFromPath(): ManagerSection {
   const section = window.location.pathname.split('/')[2];
 
-  if (section === 'workers' || section === 'tasks' || section === 'payroll') {
+  if (section === 'workers' || section === 'tasks' || section === 'payroll' || section === 'iot' || section === 'incidents') {
     return section;
   }
 
@@ -51,10 +66,16 @@ function getManagerSectionFromPath(): ManagerSection {
 }
 
 export function ManagerPage({ onLogout }: ManagerPageProps) {
-  const { workers, tasks, notifications, loading, error, markNotificationRead } = useWorkforceData();
+  const { workers, tasks, notifications, loading, error, markNotificationRead, createTask } = useWorkforceData();
   const [selectedWorkerId, setSelectedWorkerId] = useState('budi');
   const [activeSection, setActiveSection] = useState<ManagerSection>(getManagerSectionFromPath);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskOwner, setTaskOwner] = useState('Unassigned');
+  const [taskLocation, setTaskLocation] = useState('Zone C');
+  const [taskDue, setTaskDue] = useState('Today');
+  const [taskError, setTaskError] = useState<string | null>(null);
   const activeMeta = managerSectionMeta[activeSection];
   const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId) ?? workers[0];
   const unreadNotifications = notifications.filter((notification) => !notification.read);
@@ -69,6 +90,28 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     window.history.pushState({}, '', managerSectionMeta[section].path);
     setActiveSection(section);
     setAlertsOpen(false);
+  };
+
+  const submitTask = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setTaskError(null);
+
+    try {
+      await createTask({
+        title: taskTitle,
+        owner: taskOwner,
+        location: taskLocation,
+        due: taskDue
+      });
+      setTaskTitle('');
+      setTaskOwner('Unassigned');
+      setTaskLocation('Zone C');
+      setTaskDue('Today');
+      setCreateTaskOpen(false);
+      selectSection('tasks');
+    } catch (caughtError) {
+      setTaskError(caughtError instanceof Error ? caughtError.message : 'Unable to create task');
+    }
   };
 
   const openNotificationTarget = (notification: (typeof notifications)[number]) => {
@@ -95,6 +138,14 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
 
     if (activeSection === 'payroll') {
       return <PayrollView workers={workers} />;
+    }
+
+    if (activeSection === 'iot') {
+      return <IoTView />;
+    }
+
+    if (activeSection === 'incidents') {
+      return <IncidentCenterView />;
     }
 
     return (
@@ -168,7 +219,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                 ) : null}
               </div>
               <Button onClick={onLogout}>Logout</Button>
-              <Button variant="primary">Create Task</Button>
+              <Button variant="primary" onClick={() => setCreateTaskOpen(true)}>Create Task</Button>
             </div>
           </div>
         </header>
@@ -180,7 +231,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
           </div>
 
           <div className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            {(['dashboard', 'workers', 'tasks', 'payroll'] as const).map((section) => (
+            {(['dashboard', 'workers', 'tasks', 'payroll', 'iot', 'incidents'] as const).map((section) => (
               <button
                 key={section}
                 type="button"
@@ -197,6 +248,53 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
           <div className="mt-6">{renderSection()}</div>
         </div>
       </section>
+
+      {createTaskOpen ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-[#2F2C2A]/30 px-4">
+          <form onSubmit={submitTask} className="w-full max-w-[480px] rounded-lg border border-[#F3D7C8] bg-white p-5 shadow-[0_24px_80px_rgba(76,48,35,0.18)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold text-[#2F2C2A]">Create Task</p>
+                <p className="mt-1 text-sm text-[#776B63]">Add the work location so scheduling and zone review have a clear target.</p>
+              </div>
+              <button type="button" onClick={() => setCreateTaskOpen(false)} className="rounded-md px-2 py-1 text-sm font-semibold text-[#776B63] hover:bg-[#FFEFE6]">Close</button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="block">
+                <span className="text-sm font-semibold text-[#2F2C2A]">Task name</span>
+                <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="field-input mt-2" placeholder="Concrete pour inspection" required />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#2F2C2A]">Location</span>
+                <input value={taskLocation} onChange={(event) => setTaskLocation(event.target.value)} className="field-input mt-2" placeholder="Zone C, Gate 2, Level 4" required />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Assignee</span>
+                  <select value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="field-input mt-2">
+                    <option>Unassigned</option>
+                    {workers.map((worker) => <option key={worker.id}>{worker.name}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Due</span>
+                  <input value={taskDue} onChange={(event) => setTaskDue(event.target.value)} className="field-input mt-2" placeholder="Today" />
+                </label>
+              </div>
+            </div>
+
+            {taskError ? <p className="mt-4 rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{taskError}</p> : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button onClick={() => setCreateTaskOpen(false)}>Cancel</Button>
+              <button type="submit" className="inline-flex h-10 items-center justify-center rounded-md bg-[#FD7124] px-4 text-sm font-semibold text-white transition hover:bg-[#E85F18]">
+                Save Task
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

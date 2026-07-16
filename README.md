@@ -24,8 +24,10 @@ The database is initialized and seeded automatically when the API starts.
 
 ## Demo Login
 
-- Manager: `manager@garudie.test` / `manager123`
-- Worker: `worker@garudie.test` / `worker123`
+- Manager: `manager@gmail.com` / `mm`
+- Worker: `worker@gmail.com` / `ww`
+- HSE: `hse@gmail.com` / `hh`
+- Foreman: `foreman@gmail.com` / `ff`
 
 ## Scripts
 
@@ -35,6 +37,7 @@ bun run dev          # frontend + backend
 bun run dev:frontend # frontend only
 bun run dev:api      # backend only
 bun run db:seed      # reset + seed SQLite
+bun run simulate sos-button
 bun run build
 bun run test
 ```
@@ -48,3 +51,14 @@ bun run test
 - `GET /api/tasks`
 - `GET /api/notifications`
 - `PATCH /api/notifications/:id/read`
+- `GET /api/iot/overview`
+- `GET /api/iot/devices`
+- `GET /api/incidents/active`
+- `GET /api/incidents/center`
+- `GET /api/rest-requests`
+- `GET /api/workers/:workerId/risk/latest`
+- `POST /api/sites/:siteId/environment/current`
+
+## IoT Backend MVP
+
+The IoT communication layer stores wearable telemetry, creates SOS incidents, creates rest requests, evaluates deterministic risk, records buzzer/rest commands, and tracks command acknowledgement/result states. See `docs/iot-architecture.md` for the MQTT topics, simulator commands, and development plan.

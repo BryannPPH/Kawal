@@ -17,7 +17,7 @@ function getRouteFromPath(): RouteName {
 
 function getStoredRole(): UserRole | null {
   const role = localStorage.getItem(authStorageKey);
-  return role === 'manager' || role === 'worker' ? role : null;
+  return role === 'manager' || role === 'worker' || role === 'hse' || role === 'foreman' ? role : null;
 }
 
 function getStoredUser(): AuthUser | null {
@@ -55,7 +55,7 @@ function App() {
       navigate('worker');
     }
 
-    if (role === 'manager' && route !== 'manager') {
+    if (role !== 'worker' && route !== 'manager') {
       navigate('manager');
     }
   }, [role, route]);
@@ -80,7 +80,7 @@ function App() {
       localStorage.setItem(authUserStorageKey, JSON.stringify(payload.user));
       setRole(payload.user.role);
       setUser(payload.user);
-      navigate(payload.user.role);
+      navigate(payload.user.role === 'worker' ? 'worker' : 'manager');
       return null;
     } catch {
       return 'Unable to reach login server';

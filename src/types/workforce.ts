@@ -1,6 +1,6 @@
 import type { ManagerSection } from './navigation';
 
-export type WorkerStatus = 'waiting' | 'working' | 'break' | 'done';
+export type WorkerStatus = 'waiting' | 'working' | 'break' | 'done' | 'emergency';
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger';
 
@@ -22,6 +22,7 @@ export type Task = {
   id: string;
   title: string;
   owner: string;
+  location: string;
   status: string;
   due: string;
   tone: Tone;

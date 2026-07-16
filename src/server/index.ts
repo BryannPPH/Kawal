@@ -1,4 +1,32 @@
-import { authenticateUser, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
+import { authenticateUser, createTask, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
+import {
+  approveRestRequest,
+  assignDevice,
+  completeBreak,
+  evaluateWorkerRisk,
+  expirePendingCommands,
+  getActiveIncidents,
+  getCurrentBreak,
+  getCurrentEnvironmentBySite,
+  getCurrentEnvironmentByZone,
+  getDataReadiness,
+  getDevice,
+  getEnvironmentHistory,
+  getIncident,
+  getIncidentCenter,
+  getIoTOverview,
+  getLatestRisk,
+  getRestRequest,
+  getRestRequests,
+  getRiskHistory,
+  listDevices,
+  processIoTMessage,
+  publishDeviceCommand,
+  rejectRestRequest,
+  unassignDevice,
+  updateIncidentState,
+  updateSiteConditions
+} from './iot';
 
 const port = Number(process.env.API_PORT ?? 3001);
 
@@ -42,6 +70,10 @@ const server = Bun.serve({
       return jsonResponse(getWorkforceData());
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/iot/overview') {
+      return jsonResponse(getIoTOverview());
+    }
+
     if (request.method === 'POST' && url.pathname === '/api/auth/login') {
       try {
         const body = (await request.json()) as { email?: string; password?: string };
@@ -74,8 +106,239 @@ const server = Bun.serve({
       return jsonResponse(getTasks());
     }
 
+    if (request.method === 'POST' && url.pathname === '/api/tasks') {
+      const body = await readJsonBody<{ title?: string; owner?: string; location?: string; due?: string }>(request);
+
+      if (!body.title?.trim() || !body.location?.trim()) {
+        return jsonResponse({ error: 'Task title and location are required' }, { status: 400 });
+      }
+
+      return jsonResponse(createTask({
+        title: body.title,
+        owner: body.owner,
+        location: body.location,
+        due: body.due
+      }), { status: 201 });
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/notifications') {
       return jsonResponse(getNotifications());
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/iot/devices') {
+      return jsonResponse(listDevices());
+    }
+
+    const deviceMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)$/);
+
+    if (request.method === 'GET' && deviceMatch) {
+      const device = getDevice(deviceMatch[1]);
+      return device ? jsonResponse(device) : jsonResponse({ error: 'Device not found' }, { status: 404 });
+    }
+
+    const deviceAssignMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)\/assign$/);
+
+    if (request.method === 'POST' && deviceAssignMatch) {
+      const body = await readJsonBody<{ workerId?: string; siteId?: string; zoneId?: string; taskId?: string }>(request);
+      const device = assignDevice(deviceAssignMatch[1], body);
+      return device ? jsonResponse(device) : jsonResponse({ error: 'Device not found' }, { status: 404 });
+    }
+
+    const deviceUnassignMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)\/unassign$/);
+
+    if (request.method === 'POST' && deviceUnassignMatch) {
+      const device = unassignDevice(deviceUnassignMatch[1]);
+      return device ? jsonResponse(device) : jsonResponse({ error: 'Device not found' }, { status: 404 });
+    }
+
+    const deviceCommandsMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)\/commands$/);
+
+    if (request.method === 'GET' && deviceCommandsMatch) {
+      return jsonResponse(getIoTOverview().commands.filter((command: any) => command.device_id === deviceCommandsMatch[1]));
+    }
+
+    const deviceBuzzerMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)\/commands\/buzzer$/);
+
+    if (request.method === 'POST' && deviceBuzzerMatch) {
+      const body = await readJsonBody<{ pattern?: string; durationMs?: number }>(request);
+      return jsonResponse(publishDeviceCommand({
+        deviceId: deviceBuzzerMatch[1],
+        commandType: 'BUZZER',
+        priority: 'HIGH',
+        payload: {
+          pattern: body.pattern ?? 'WARNING',
+          repeat: 1,
+          durationMs: body.durationMs ?? 1000
+        }
+      }), { status: 201 });
+    }
+
+    const siteEnvironmentMatch = url.pathname.match(/^\/api\/sites\/([^/]+)\/environment\/current$/);
+
+    if (request.method === 'GET' && siteEnvironmentMatch) {
+      return jsonResponse(getCurrentEnvironmentBySite(siteEnvironmentMatch[1]));
+    }
+
+    if (request.method === 'POST' && siteEnvironmentMatch) {
+      const body = await readJsonBody<{
+        zoneId?: string;
+        temperatureC?: number;
+        humidityPct?: number;
+        weather?: string;
+        surfaceCondition?: string;
+        craneActive?: boolean;
+        restrictedZoneDetected?: boolean;
+      }>(request);
+
+      if (!body.zoneId || typeof body.temperatureC !== 'number' || typeof body.humidityPct !== 'number' || !body.weather || !body.surfaceCondition) {
+        return jsonResponse({ error: 'zoneId, temperatureC, humidityPct, weather, and surfaceCondition are required' }, { status: 400 });
+      }
+
+      const result = updateSiteConditions({
+        siteId: siteEnvironmentMatch[1],
+        zoneId: body.zoneId,
+        temperatureC: body.temperatureC,
+        humidityPct: body.humidityPct,
+        weather: body.weather,
+        surfaceCondition: body.surfaceCondition,
+        craneActive: Boolean(body.craneActive),
+        restrictedZoneDetected: Boolean(body.restrictedZoneDetected)
+      });
+
+      return jsonResponse(result, { status: result.ok ? 201 : 400 });
+    }
+
+    const zoneEnvironmentCurrentMatch = url.pathname.match(/^\/api\/zones\/([^/]+)\/environment\/current$/);
+
+    if (request.method === 'GET' && zoneEnvironmentCurrentMatch) {
+      return jsonResponse(getCurrentEnvironmentByZone(decodeURIComponent(zoneEnvironmentCurrentMatch[1])) ?? null);
+    }
+
+    const zoneEnvironmentHistoryMatch = url.pathname.match(/^\/api\/zones\/([^/]+)\/environment\/history$/);
+
+    if (request.method === 'GET' && zoneEnvironmentHistoryMatch) {
+      return jsonResponse(getEnvironmentHistory(decodeURIComponent(zoneEnvironmentHistoryMatch[1])));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/rest-requests') {
+      return jsonResponse(getRestRequests());
+    }
+
+    const restRequestMatch = url.pathname.match(/^\/api\/rest-requests\/([^/]+)$/);
+
+    if (request.method === 'GET' && restRequestMatch) {
+      const restRequest = getRestRequest(restRequestMatch[1]);
+      return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+    }
+
+    const restApproveMatch = url.pathname.match(/^\/api\/rest-requests\/([^/]+)\/approve$/);
+
+    if (request.method === 'POST' && restApproveMatch) {
+      const restRequest = approveRestRequest(restApproveMatch[1]);
+      return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+    }
+
+    const restRejectMatch = url.pathname.match(/^\/api\/rest-requests\/([^/]+)\/reject$/);
+
+    if (request.method === 'POST' && restRejectMatch) {
+      const body = await readJsonBody<{ reason?: string }>(request);
+
+      if (!body.reason) {
+        return jsonResponse({ error: 'Rejection reason is required' }, { status: 400 });
+      }
+
+      const restRequest = rejectRestRequest(restRejectMatch[1], body.reason);
+      return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+    }
+
+    const workerBreakMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/break\/current$/);
+
+    if (request.method === 'GET' && workerBreakMatch) {
+      return jsonResponse(getCurrentBreak(workerBreakMatch[1]) ?? null);
+    }
+
+    const workerBreakCompleteMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/break\/complete$/);
+
+    if (request.method === 'POST' && workerBreakCompleteMatch) {
+      return jsonResponse(completeBreak(workerBreakCompleteMatch[1]) ?? { completed: true });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/incidents/active') {
+      return jsonResponse(getActiveIncidents());
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/incidents/center') {
+      return jsonResponse(getIncidentCenter());
+    }
+
+    const incidentMatch = url.pathname.match(/^\/api\/incidents\/([^/]+)$/);
+
+    if (request.method === 'GET' && incidentMatch) {
+      const incident = getIncident(incidentMatch[1]);
+      return incident ? jsonResponse(incident) : jsonResponse({ error: 'Incident not found' }, { status: 404 });
+    }
+
+    for (const [action, state] of [
+      ['acknowledge', 'ACKNOWLEDGED'],
+      ['escalate', 'ESCALATED'],
+      ['resolve', 'RESOLVED'],
+      ['false-alarm', 'FALSE_ALARM']
+    ] as const) {
+      const actionMatch = url.pathname.match(new RegExp(`^/api/incidents/([^/]+)/${action}$`));
+      if (request.method === 'POST' && actionMatch) {
+        const incident = updateIncidentState(actionMatch[1], state);
+        return incident ? jsonResponse(incident) : jsonResponse({ error: 'Incident not found' }, { status: 404 });
+      }
+    }
+
+    const latestRiskMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/risk\/latest$/);
+
+    if (request.method === 'GET' && latestRiskMatch) {
+      return jsonResponse(getLatestRisk(latestRiskMatch[1]) ?? null);
+    }
+
+    const riskHistoryMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/risk\/history$/);
+
+    if (request.method === 'GET' && riskHistoryMatch) {
+      return jsonResponse(getRiskHistory(riskHistoryMatch[1]));
+    }
+
+    const riskEvaluateMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/risk\/evaluate$/);
+
+    if (request.method === 'POST' && riskEvaluateMatch) {
+      const risk = evaluateWorkerRisk(riskEvaluateMatch[1]);
+      return risk ? jsonResponse(risk, { status: 201 }) : jsonResponse({ error: 'Worker has no assigned device' }, { status: 404 });
+    }
+
+    const readinessMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/data-(readiness|quality)$/);
+
+    if (request.method === 'GET' && readinessMatch) {
+      return jsonResponse(getDataReadiness(readinessMatch[1]));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/dev/iot/messages') {
+      if (process.env.NODE_ENV === 'production') {
+        return jsonResponse({ error: 'Simulation endpoint is disabled in production' }, { status: 403 });
+      }
+
+      const body = await readJsonBody<{ topic?: string; payload?: unknown }>(request);
+
+      if (!body.topic || !body.payload) {
+        return jsonResponse({ error: 'topic and payload are required' }, { status: 400 });
+      }
+
+      const result = processIoTMessage(body.topic, JSON.stringify(body.payload));
+      return jsonResponse(result, { status: result.ok ? 202 : result.status ?? 400 });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/dev/iot/maintenance') {
+      if (process.env.NODE_ENV === 'production') {
+        return jsonResponse({ error: 'Simulation endpoint is disabled in production' }, { status: 403 });
+      }
+
+      return jsonResponse({
+        expiredCommands: expirePendingCommands()
+      });
     }
 
     const notificationReadMatch = url.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
@@ -95,3 +358,11 @@ const server = Bun.serve({
 });
 
 console.log(`Garudie API listening on http://${server.hostname}:${server.port}`);
+
+async function readJsonBody<T>(request: Request): Promise<T> {
+  try {
+    return (await request.json()) as T;
+  } catch {
+    return {} as T;
+  }
+}
