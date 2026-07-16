@@ -89,9 +89,28 @@ export const tasks: Task[] = [
 ];
 
 export const notifications: Notification[] = [
-  { title: 'Hazard report', detail: 'Wet surface reported near Zone C.', tone: 'danger' },
-  { title: 'Fatigue watch', detail: 'Sari reached the break threshold.', tone: 'warning' },
-  { title: 'Review ready', detail: 'Dimas uploaded scaffold inspection proof.', tone: 'success' }
+  {
+    title: 'Hazard report',
+    detail: 'Wet surface reported near Zone C.',
+    tone: 'danger',
+    targetLabel: 'Open Tasks',
+    targetSection: 'tasks'
+  },
+  {
+    title: 'Fatigue watch',
+    detail: 'Sari reached the break threshold.',
+    tone: 'warning',
+    targetLabel: 'View Worker',
+    targetSection: 'workers',
+    targetWorkerId: 'sari'
+  },
+  {
+    title: 'Review ready',
+    detail: 'Dimas uploaded scaffold inspection proof.',
+    tone: 'success',
+    targetLabel: 'Review Tasks',
+    targetSection: 'tasks'
+  }
 ];
 
 export const statusLabels: Record<WorkerStatus, string> = {

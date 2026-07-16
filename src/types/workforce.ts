@@ -1,3 +1,5 @@
+import type { ManagerSection } from './navigation';
+
 export type WorkerStatus = 'waiting' | 'working' | 'break' | 'done';
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger';
@@ -28,4 +30,7 @@ export type Notification = {
   title: string;
   detail: string;
   tone: Tone;
+  targetLabel: string;
+  targetSection: ManagerSection;
+  targetWorkerId?: string;
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { statusLabels, tasks, workers } from './workforce';
+import { notifications, statusLabels, tasks, workers } from './workforce';
 
 describe('workforce constants', () => {
   it('keeps a valid selected worker seed available', () => {
@@ -20,5 +20,11 @@ describe('workforce constants', () => {
     const statuses = new Set(workers.map((worker) => worker.status));
 
     expect([...statuses].every((status) => status in statusLabels)).toBe(true);
+  });
+
+  it('routes every notification to a manager section', () => {
+    const supportedSections = new Set(['dashboard', 'workers', 'tasks', 'payroll']);
+
+    expect(notifications.every((notification) => supportedSections.has(notification.targetSection))).toBe(true);
   });
 });
