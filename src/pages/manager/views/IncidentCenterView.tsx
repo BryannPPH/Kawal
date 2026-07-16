@@ -1,9 +1,8 @@
-import { AlertTriangle, ClipboardCheck, History, Radio, ShieldAlert } from 'lucide-react';
+import { ClipboardCheck, Radio } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Pill } from '../../../components/ui/Pill';
 import type { IncidentCenterData, IoTIncident } from '../../../types/iot';
-import { MetricCard } from '../components/MetricCard';
 
 const emptyCenter: IncidentCenterData = {
   activeIncidents: [],
@@ -47,23 +46,41 @@ export function IncidentCenterView() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <MetricCard label="Active SOS" value={String(data.activeIncidents.length)} detail="Open emergency alerts" icon={ShieldAlert} />
-        <MetricCard label="Near Miss" value={String(data.nearMissReports.length)} detail="Impact or fall-candidate reports" icon={AlertTriangle} />
-        <MetricCard label="History" value={String(data.incidentHistory.length)} detail="Emergency records retained" icon={History} />
-      </div>
+    <div className="space-y-8">
+      <section className="overflow-hidden rounded-lg border border-[#F3D7C8] bg-white">
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="p-6 sm:p-7">
+            <p className="text-sm font-semibold text-[#C95119]">Incident Center</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#2F2C2A]">Focus on the alerts that need a decision.</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#776B63]">Active SOS, near-miss reports, and emergency history stay separated so managers can act without scanning dense data.</p>
+          </div>
+          <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-6 xl:border-l xl:border-t-0">
+            <div className="grid grid-cols-3 gap-3">
+              <CenterStat label="SOS" value={data.activeIncidents.length} tone="danger" />
+              <CenterStat label="Near miss" value={data.nearMissReports.length} tone="warning" />
+              <CenterStat label="History" value={data.incidentHistory.length} tone="neutral" />
+            </div>
+            <div className="mt-5 rounded-lg bg-white p-4">
+              <div className="flex items-center gap-3">
+                <span className={`h-3 w-3 rounded-full ${data.activeIncidents.length ? 'bg-[#CF5A4F]' : 'bg-[#55936A]'}`} />
+                <p className="text-sm font-semibold text-[#2F2C2A]">{data.activeIncidents.length ? 'Action needed' : 'No active SOS'}</p>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-[#776B63]">Use acknowledge, escalate, or resolve only when an incident is active.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {error ? <p className="rounded-md bg-[#FFF4DC] px-3 py-2 text-sm font-semibold text-[#8A4B02]">Incident Center API unavailable: {error}</p> : null}
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-lg border border-[#F3D7C8] bg-white p-5">
+        <div className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#2F2C2A]">Active SOS Alerts</p>
-              <p className="mt-1 text-sm text-[#776B63]">Managers and HSE can acknowledge, escalate, or resolve active incidents.</p>
+              <p className="mt-1 text-sm text-[#776B63]">Managers can acknowledge, escalate, or resolve active incidents.</p>
             </div>
-            <Pill className="bg-[#FFEFE6] text-[#B84011]">FR-SOS</Pill>
+            <Pill className="bg-[#FFEFE6] text-[#B84011]">SOS</Pill>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -77,7 +94,7 @@ export function IncidentCenterView() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-[#F3D7C8] bg-white p-5">
+        <div className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#2F2C2A]">Near-Miss Reports</p>
@@ -105,11 +122,11 @@ export function IncidentCenterView() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-[#F3D7C8] bg-white p-5">
+      <section className="rounded-lg border border-[#F3D7C8] bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Emergency History</p>
-            <p className="mt-1 text-sm text-[#776B63]">Resolved and escalated incidents remain visible for review under FR-INC.</p>
+            <p className="mt-1 text-sm text-[#776B63]">Resolved and escalated incidents remain visible for manager review.</p>
           </div>
           <ClipboardCheck size={18} className="text-[#FAA745]" />
         </div>
@@ -135,6 +152,21 @@ export function IncidentCenterView() {
   );
 }
 
+function CenterStat({ label, value, tone }: { label: string; value: number; tone: 'danger' | 'warning' | 'neutral' }) {
+  const styles = {
+    danger: 'bg-[#FFEFE6] text-[#B84011]',
+    warning: 'bg-[#FFF4DC] text-[#8A4B02]',
+    neutral: 'bg-white text-[#5F5A56]'
+  }[tone];
+
+  return (
+    <div className={`rounded-lg p-4 text-center ${styles}`}>
+      <p className="text-3xl font-semibold">{value}</p>
+      <p className="mt-1 text-xs font-semibold">{label}</p>
+    </div>
+  );
+}
+
 function IncidentCard({
   incident,
   onAction
@@ -143,7 +175,7 @@ function IncidentCard({
   onAction: (incidentId: string, action: 'acknowledge' | 'escalate' | 'resolve') => void;
 }) {
   return (
-    <div className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+    <div className="rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex items-center gap-2">

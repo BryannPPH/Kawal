@@ -31,20 +31,6 @@ const users = [
     email: 'worker@gmail.com',
     role: 'worker',
     password: 'ww'
-  },
-  {
-    id: 'hse-demo',
-    name: 'HSE Officer',
-    email: 'hse@gmail.com',
-    role: 'hse',
-    password: 'hh'
-  },
-  {
-    id: 'foreman-demo',
-    name: 'Site Foreman',
-    email: 'foreman@gmail.com',
-    role: 'foreman',
-    password: 'ff'
   }
 ] satisfies Array<AuthUser & { password: string }>;
 
@@ -378,6 +364,8 @@ function seedDatabase() {
 }
 
 function seedUsers() {
+  db.query("DELETE FROM users WHERE role NOT IN ('manager', 'worker')").run();
+
   const insertUser = db.prepare(`
     INSERT OR IGNORE INTO users (
       id, name, email, role, password_hash

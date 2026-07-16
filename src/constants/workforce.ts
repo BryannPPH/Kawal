@@ -149,7 +149,7 @@ function makeSeedSchedulerRecommendation(priority: string): SchedulerRecommendat
     capacityEstimatorVersion: 'capacity-estimator-v1',
     requiredPpeAndCertifications: ['Helmet', 'Safety shoes', 'Harness if working at height'],
     dependencyStatus: 'No blocking dependency inferred from current task state',
-    currentEnvironmentalConditions: 'Uses latest IoT/manual site state when scheduler is deployed',
+    currentEnvironmentalConditions: 'Uses the latest IoT site conditions for task planning',
     safetyAndOperationalWarnings: urgent ? ['Supervisor confirmation required before start'] : ['Standard toolbox check required'],
     chronosForecast: {
       futureProductivity: urgent ? '3.2 units/worker-hour' : '2.1 units/worker-hour',

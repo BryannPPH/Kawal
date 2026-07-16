@@ -236,7 +236,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     <div className="flex min-h-screen bg-[#F1F2F7]">
       <ManagerSidebar activeSection={activeSection} onSelectSection={selectSection} />
 
-      <section className="min-w-0 flex-1">
+      <section className="min-w-0 flex-1 lg:ml-[248px]">
         <header className="sticky top-0 z-20 border-b border-[#F3D7C8] bg-white/95 px-5 py-4 backdrop-blur sm:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-3xl xl:max-w-4xl">
@@ -331,7 +331,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                         {unreadNotifications.length} unread
                       </span>
                     </div>
-                    {error ? <p className="mb-3 rounded-md bg-[#FFF4DC] px-3 py-2 text-xs font-semibold text-[#8A4B02]">Using local fallback data</p> : null}
+                    {error ? <p className="mb-3 rounded-md bg-[#FFF4DC] px-3 py-2 text-xs font-semibold text-[#8A4B02]">Unable to refresh live data</p> : null}
                     <div className="space-y-2">
                       {notifications.map((item) => (
                         <button

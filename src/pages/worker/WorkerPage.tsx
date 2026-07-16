@@ -523,7 +523,7 @@ function HomePanel({
         </ul>
         {latestPpeCheck ? (
           <p className="mt-3 rounded-md bg-[#FFF8F4] px-3 py-2 text-xs font-semibold text-[#776B63]">
-            {latestPpeCheck.provider === 'demo' ? 'Demo PPE check' : 'AI PPE check'} / {Math.round(latestPpeCheck.confidence * 100)}% confidence
+            PPE check / {Math.round(latestPpeCheck.confidence * 100)}% confidence
           </p>
         ) : null}
       </section>

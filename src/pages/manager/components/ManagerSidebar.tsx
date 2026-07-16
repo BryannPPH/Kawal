@@ -12,8 +12,8 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
   const activeLabel = managerSections.find((item) => item.section === activeSection)?.label ?? 'Dashboard';
 
   return (
-    <aside className="hidden w-[248px] shrink-0 border-r border-[#F3D7C8] bg-white px-5 py-6 lg:flex lg:flex-col">
-      <div>
+    <aside className="fixed bottom-0 left-0 top-0 z-30 hidden w-[248px] border-r border-[#F3D7C8] bg-white px-5 py-6 lg:flex lg:flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="mb-10 flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center">
             <img src={kawalLogo} alt="Kawal logo" className="h-10 w-10 object-contain" />
@@ -43,14 +43,30 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
             );
           })}
         </nav>
+
+        <div className="mt-8 rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+          <p className="text-sm font-semibold text-[#2F2C2A]">Current Page</p>
+          <p className="mt-1 text-sm text-[#776B63]">{activeLabel}</p>
+          <div className="mt-4 flex items-center gap-2">
+            <TimerReset size={16} className="text-[#FAA745]" />
+            <p className="text-sm text-[#776B63]">11 workers scheduled for break.</p>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-8 rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-        <p className="text-sm font-semibold text-[#2F2C2A]">Current Page</p>
-        <p className="mt-1 text-sm text-[#776B63]">{activeLabel}</p>
-        <div className="mt-4 flex items-center gap-2">
+      <div className="mt-5 border-t border-[#F3D7C8] pt-4">
+        <div className="flex items-center gap-3 rounded-lg bg-[#FFF8F4] p-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#FD7124] text-sm font-semibold text-white">
+            JM
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#2F2C2A]">Jenni Manager</p>
+            <p className="mt-0.5 truncate text-xs text-[#776B63]">Manager access</p>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-2 px-1">
           <TimerReset size={16} className="text-[#FAA745]" />
-          <p className="text-sm text-[#776B63]">11 workers scheduled for break.</p>
+          <p className="text-xs text-[#776B63]">Shift control active</p>
         </div>
       </div>
     </aside>

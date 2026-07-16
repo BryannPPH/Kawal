@@ -5,7 +5,7 @@ const authUserStorageKey = 'garudie-auth-user';
 
 export function getStoredRole(): UserRole | null {
   const role = localStorage.getItem(authRoleStorageKey);
-  return role === 'manager' || role === 'worker' || role === 'hse' || role === 'foreman' ? role : null;
+  return role === 'manager' || role === 'worker' ? role : null;
 }
 
 export function getStoredUser(): AuthUser | null {
