@@ -12,7 +12,7 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
   const activeLabel = managerSections.find((item) => item.section === activeSection)?.label ?? 'Dashboard';
 
   return (
-    <aside className="fixed bottom-0 left-0 top-0 z-30 hidden w-[248px] border-r border-[#F3D7C8] bg-white px-5 py-6 lg:flex lg:flex-col">
+    <aside className="fixed bottom-0 left-0 top-0 z-30 hidden w-[248px] border-r border-[#F3D7C8]/70 bg-white/90 px-5 py-6 backdrop-blur-xl lg:flex lg:flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="mb-10 flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center">

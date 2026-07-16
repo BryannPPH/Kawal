@@ -220,8 +220,8 @@ function WorkerSignalCard({ device, overview }: { device: IoTDevice; overview: I
       </div>
       {sos || rest ? (
         <div className="mt-3 rounded-xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 py-2">
-          {sos ? <p className="text-xs font-semibold text-[#B84011]">Incident Center handles acknowledgement, escalation, and resolution.</p> : null}
-          {rest ? <p className="text-xs font-semibold text-[#8A4B02]">Incident Center handles rest request review.</p> : null}
+          {sos ? <p className="text-xs font-semibold text-[#B84011]">SOS is active. Review and respond from the Incident Center.</p> : null}
+          {rest ? <p className="text-xs font-semibold text-[#8A4B02]">Rest request received. Check worker fatigue before assigning more work.</p> : null}
         </div>
       ) : null}
     </div>

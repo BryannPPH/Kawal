@@ -1,4 +1,4 @@
-import { ClipboardCheck, Radio } from 'lucide-react';
+import { ClipboardCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Pill } from '../../../components/ui/Pill';
@@ -52,12 +52,11 @@ export function IncidentCenterView() {
           <div className="p-6 sm:p-7">
             <p className="text-sm font-semibold text-[#C95119]">Incident Center</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#2F2C2A]">Focus on the alerts that need a decision.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#776B63]">Active SOS, near-miss reports, and emergency history stay separated so managers can act without scanning dense data.</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#776B63]">Active SOS alerts and emergency history stay separated so managers can act without scanning dense data.</p>
           </div>
           <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-6 xl:border-l xl:border-t-0">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <CenterStat label="SOS" value={data.activeIncidents.length} tone="danger" />
-              <CenterStat label="Near miss" value={data.nearMissReports.length} tone="warning" />
               <CenterStat label="History" value={data.incidentHistory.length} tone="neutral" />
             </div>
             <div className="mt-5 rounded-2xl bg-white p-4">
@@ -73,8 +72,7 @@ export function IncidentCenterView() {
 
       {error ? <p className="rounded-xl bg-[#FFF4DC] px-3 py-2 text-sm font-semibold text-[#8A4B02]">Incident Center API unavailable: {error}</p> : null}
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
+      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#2F2C2A]">Active SOS Alerts</p>
@@ -92,34 +90,6 @@ export function IncidentCenterView() {
               <EmptyState loading={loading} text="No active SOS alerts." />
             )}
           </div>
-        </div>
-
-        <div className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[#2F2C2A]">Near-Miss Reports</p>
-              <p className="mt-1 text-sm text-[#776B63]">Motion telemetry requiring safety review.</p>
-            </div>
-            <Radio size={18} className="text-[#FAA745]" />
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {data.nearMissReports.length ? (
-              data.nearMissReports.map((report) => (
-                <div key={report.id} className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#2F2C2A]">{report.worker_id ?? report.device_id}</p>
-                    <Pill className="bg-[#FFEFE6] text-[#B84011]">{report.fall_candidate ? 'Fall candidate' : 'Impact'}</Pill>
-                  </div>
-                  <p className="mt-2 text-sm text-[#776B63]">{report.zone_id ?? 'Unknown zone'} / {report.maximum_acceleration_g}G peak</p>
-                  <p className="mt-1 text-xs font-semibold text-[#A09188]">{formatTime(report.window_end)}</p>
-                </div>
-              ))
-            ) : (
-              <EmptyState loading={loading} text="No near-miss reports." />
-            )}
-          </div>
-        </div>
       </section>
 
       <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
@@ -152,10 +122,9 @@ export function IncidentCenterView() {
   );
 }
 
-function CenterStat({ label, value, tone }: { label: string; value: number; tone: 'danger' | 'warning' | 'neutral' }) {
+function CenterStat({ label, value, tone }: { label: string; value: number; tone: 'danger' | 'neutral' }) {
   const styles = {
     danger: 'bg-[#FFEFE6] text-[#B84011]',
-    warning: 'bg-[#FFF4DC] text-[#8A4B02]',
     neutral: 'bg-white text-[#5F5A56]'
   }[tone];
 

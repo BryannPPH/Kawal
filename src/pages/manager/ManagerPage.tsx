@@ -1,6 +1,7 @@
 import { Bell, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import managerBackground from '../../../assets/background_manager.png';
 import { Button } from '../../components/ui/Button';
 import { getManagerSectionFromPath, managerSectionMeta, managerSections } from '../../constants/managerNavigation';
 import { taskTemplates } from '../../constants/taskTemplates';
@@ -233,11 +234,18 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F1F2F7]">
+    <div
+      className="relative flex min-h-screen overflow-hidden bg-[#F1F2F7] bg-cover bg-center bg-no-repeat"
+      style={{
+        backgroundImage: `linear-gradient(90deg, rgba(255,255,255,0.84), rgba(255,248,244,0.68)), url(${managerBackground})`,
+        backgroundAttachment: 'fixed'
+      }}
+    >
+      <div className="pointer-events-none fixed inset-0 bg-white/18 backdrop-blur-[2px]" />
       <ManagerSidebar activeSection={activeSection} onSelectSection={selectSection} />
 
-      <section className="min-w-0 flex-1 lg:ml-[248px]">
-        <header className="sticky top-0 z-20 border-b border-[#F3D7C8] bg-white/95 px-5 py-4 backdrop-blur sm:px-8">
+      <section className="relative z-10 min-w-0 flex-1 lg:ml-[248px]">
+        <header className="sticky top-0 z-20 border-b border-[#F3D7C8]/70 bg-white/90 px-5 py-4 backdrop-blur-xl sm:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-3xl xl:max-w-4xl">
               <div className="flex h-11 items-center rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#A09188] transition focus-within:border-[#FD7124] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#FFEFE6]">
