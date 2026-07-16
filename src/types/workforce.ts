@@ -19,6 +19,7 @@ export type Worker = {
 };
 
 export type Task = {
+  id: string;
   title: string;
   owner: string;
   status: string;
@@ -27,10 +28,18 @@ export type Task = {
 };
 
 export type Notification = {
+  id: string;
   title: string;
   detail: string;
   tone: Tone;
   targetLabel: string;
   targetSection: ManagerSection;
   targetWorkerId?: string;
+  read: boolean;
+};
+
+export type WorkforceData = {
+  workers: Worker[];
+  tasks: Task[];
+  notifications: Notification[];
 };

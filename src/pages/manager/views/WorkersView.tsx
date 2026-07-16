@@ -1,15 +1,15 @@
 import { TimerReset, UserCheck, Users } from 'lucide-react';
-import { workers } from '../../../constants/workforce';
 import type { Worker } from '../../../types/workforce';
 import { MetricCard } from '../components/MetricCard';
 import { WorkerBoard } from '../components/WorkerBoard';
 
 type WorkersViewProps = {
+  workers: Worker[];
   selectedWorker: Worker;
   onSelectWorker: (worker: Worker) => void;
 };
 
-export function WorkersView({ selectedWorker, onSelectWorker }: WorkersViewProps) {
+export function WorkersView({ workers, selectedWorker, onSelectWorker }: WorkersViewProps) {
   const workingCount = workers.filter((worker) => worker.status === 'working').length;
   const breakCount = workers.filter((worker) => worker.status === 'break').length;
   const waitingCount = workers.filter((worker) => worker.status === 'waiting').length;
@@ -22,7 +22,7 @@ export function WorkersView({ selectedWorker, onSelectWorker }: WorkersViewProps
         <MetricCard label="Break Queue" value={String(breakCount)} detail="Fatigue and rest monitoring" icon={TimerReset} />
       </div>
 
-      <WorkerBoard selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
+      <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
 
       <section className="rounded-lg border border-[#F3D7C8] bg-white p-5">
         <p className="text-sm font-semibold text-[#2F2C2A]">Crew Coverage</p>

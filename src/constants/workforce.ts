@@ -82,34 +82,40 @@ export const workers: Worker[] = [
 ];
 
 export const tasks: Task[] = [
-  { title: 'Steel beam install', owner: 'Budi Santoso', status: 'In progress', due: '2h 15m', tone: 'warning' },
-  { title: 'Harness audit', owner: 'Dewi Lestari', status: 'Assigned', due: '45m', tone: 'neutral' },
-  { title: 'Scaffold photo proof', owner: 'Dimas Ardi', status: 'Review', due: 'Ready', tone: 'success' },
-  { title: 'Wet surface cleanup', owner: 'Unassigned', status: 'Open', due: '30m', tone: 'danger' }
+  { id: 'steel-beam-install', title: 'Steel beam install', owner: 'Budi Santoso', status: 'In progress', due: '2h 15m', tone: 'warning' },
+  { id: 'harness-audit', title: 'Harness audit', owner: 'Dewi Lestari', status: 'Assigned', due: '45m', tone: 'neutral' },
+  { id: 'scaffold-photo-proof', title: 'Scaffold photo proof', owner: 'Dimas Ardi', status: 'Review', due: 'Ready', tone: 'success' },
+  { id: 'wet-surface-cleanup', title: 'Wet surface cleanup', owner: 'Unassigned', status: 'Open', due: '30m', tone: 'danger' }
 ];
 
 export const notifications: Notification[] = [
   {
+    id: 'hazard-zone-c',
     title: 'Hazard report',
     detail: 'Wet surface reported near Zone C.',
     tone: 'danger',
     targetLabel: 'Open Tasks',
-    targetSection: 'tasks'
+    targetSection: 'tasks',
+    read: false
   },
   {
+    id: 'fatigue-sari',
     title: 'Fatigue watch',
     detail: 'Sari reached the break threshold.',
     tone: 'warning',
     targetLabel: 'View Worker',
     targetSection: 'workers',
-    targetWorkerId: 'sari'
+    targetWorkerId: 'sari',
+    read: false
   },
   {
+    id: 'review-dimas',
     title: 'Review ready',
     detail: 'Dimas uploaded scaffold inspection proof.',
     tone: 'success',
     targetLabel: 'Review Tasks',
-    targetSection: 'tasks'
+    targetSection: 'tasks',
+    read: false
   }
 ];
 

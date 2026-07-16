@@ -12,12 +12,10 @@ import {
 import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Pill } from '../../components/ui/Pill';
-import { RouteLink } from '../../components/ui/RouteLink';
-import type { RouteName } from '../../types/navigation';
 import { ProcedureStep } from './components/ProcedureStep';
 
 type WorkerPageProps = {
-  onNavigate: (route: RouteName) => void;
+  onLogout: () => void;
 };
 
 const workerNav = [
@@ -27,7 +25,7 @@ const workerNav = [
   { label: 'Profile', icon: User }
 ];
 
-export function WorkerPage({ onNavigate }: WorkerPageProps) {
+export function WorkerPage({ onLogout }: WorkerPageProps) {
   const [started, setStarted] = useState(false);
   const [hazard, setHazard] = useState<string | null>(null);
   const [sosSent, setSosSent] = useState(false);
@@ -44,7 +42,7 @@ export function WorkerPage({ onNavigate }: WorkerPageProps) {
             <p className="text-xs text-[#776B63]">Zone C · Steel Crew</p>
           </div>
         </div>
-        <RouteLink to="manager" onNavigate={onNavigate}>Manager</RouteLink>
+        <Button onClick={onLogout}>Logout</Button>
       </div>
 
       <div className="relative mx-auto mt-5 max-w-[430px] rounded-lg border border-[#F3D7C8] bg-white p-4 shadow-[0_20px_60px_rgba(76,48,35,0.14)]">

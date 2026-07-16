@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react';
-import { statusLabels, workers } from '../../../constants/workforce';
+import { statusLabels } from '../../../constants/workforce';
 import type { Worker, WorkerStatus } from '../../../types/workforce';
 import { WorkerRow } from './WorkerRow';
 
 type WorkerBoardProps = {
+  workers: Worker[];
   selectedWorker: Worker;
   onSelectWorker: (worker: Worker) => void;
 };
 
-export function WorkerBoard({ selectedWorker, onSelectWorker }: WorkerBoardProps) {
+export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerBoardProps) {
   const [filter, setFilter] = useState<WorkerStatus | 'all'>('all');
   const visibleWorkers = useMemo(() => workers.filter((worker) => filter === 'all' || worker.status === filter), [filter]);
 

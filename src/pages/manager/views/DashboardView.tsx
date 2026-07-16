@@ -1,11 +1,13 @@
 import { Check, ClipboardList, ShieldAlert, Users } from 'lucide-react';
-import type { Worker } from '../../../types/workforce';
+import type { Task, Worker } from '../../../types/workforce';
 import { AssignmentPanel } from '../components/AssignmentPanel';
 import { MetricCard } from '../components/MetricCard';
 import { WorkerBoard } from '../components/WorkerBoard';
 
 type DashboardViewProps = {
   selectedWorker: Worker;
+  workers: Worker[];
+  tasks: Task[];
   onSelectWorker: (worker: Worker) => void;
 };
 
@@ -16,7 +18,7 @@ const metrics = [
   { label: 'High Risk', value: '6', detail: '2 fewer than yesterday', icon: ShieldAlert }
 ];
 
-export function DashboardView({ selectedWorker, onSelectWorker }: DashboardViewProps) {
+export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }: DashboardViewProps) {
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-[#F3D7C8] bg-white/65 p-4">
@@ -41,7 +43,7 @@ export function DashboardView({ selectedWorker, onSelectWorker }: DashboardViewP
         </div>
         <div className="space-y-4">
           <AssignmentPanel selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
-          <WorkerBoard selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
+          <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
         </div>
       </section>
     </div>

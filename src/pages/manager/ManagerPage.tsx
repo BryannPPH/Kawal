@@ -1,9 +1,8 @@
 import { Bell, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
-import { RouteLink } from '../../components/ui/RouteLink';
-import { notifications, workers } from '../../constants/workforce';
-import type { ManagerSection, RouteName } from '../../types/navigation';
+import { useWorkforceData } from '../../hooks/useWorkforceData';
+import type { ManagerSection } from '../../types/navigation';
 import { ManagerSidebar } from './components/ManagerSidebar';
 import { DashboardView } from './views/DashboardView';
 import { PayrollView } from './views/PayrollView';
@@ -11,7 +10,7 @@ import { TasksView } from './views/TasksView';
 import { WorkersView } from './views/WorkersView';
 
 type ManagerPageProps = {
-  onNavigate: (route: RouteName) => void;
+  onLogout: () => void;
 };
 
 const managerSectionMeta: Record<ManagerSection, { title: string; description: string; eyebrow: string; path: string }> = {
@@ -51,11 +50,14 @@ function getManagerSectionFromPath(): ManagerSection {
   return 'dashboard';
 }
 
-export function ManagerPage({ onNavigate }: ManagerPageProps) {
-  const [selectedWorker, setSelectedWorker] = useState(workers[0]);
+export function ManagerPage({ onLogout }: ManagerPageProps) {
+  const { workers, tasks, notifications, loading, error, markNotificationRead } = useWorkforceData();
+  const [selectedWorkerId, setSelectedWorkerId] = useState('budi');
   const [activeSection, setActiveSection] = useState<ManagerSection>(getManagerSectionFromPath);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const activeMeta = managerSectionMeta[activeSection];
+  const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId) ?? workers[0];
+  const unreadNotifications = notifications.filter((notification) => !notification.read);
 
   useEffect(() => {
     const handlePopState = () => setActiveSection(getManagerSectionFromPath());
@@ -74,27 +76,35 @@ export function ManagerPage({ onNavigate }: ManagerPageProps) {
       const targetWorker = workers.find((worker) => worker.id === notification.targetWorkerId);
 
       if (targetWorker) {
-        setSelectedWorker(targetWorker);
+        setSelectedWorkerId(targetWorker.id);
       }
     }
 
+    markNotificationRead(notification.id);
     selectSection(notification.targetSection);
   };
 
   const renderSection = () => {
     if (activeSection === 'workers') {
-      return <WorkersView selectedWorker={selectedWorker} onSelectWorker={setSelectedWorker} />;
+      return <WorkersView workers={workers} selectedWorker={selectedWorker} onSelectWorker={(worker) => setSelectedWorkerId(worker.id)} />;
     }
 
     if (activeSection === 'tasks') {
-      return <TasksView />;
+      return <TasksView tasks={tasks} />;
     }
 
     if (activeSection === 'payroll') {
-      return <PayrollView />;
+      return <PayrollView workers={workers} />;
     }
 
-    return <DashboardView selectedWorker={selectedWorker} onSelectWorker={setSelectedWorker} />;
+    return (
+      <DashboardView
+        workers={workers}
+        tasks={tasks}
+        selectedWorker={selectedWorker}
+        onSelectWorker={(worker) => setSelectedWorkerId(worker.id)}
+      />
+    );
   };
 
   return (
@@ -118,26 +128,31 @@ export function ManagerPage({ onNavigate }: ManagerPageProps) {
                   className="relative grid h-10 w-10 place-items-center rounded-md border border-[#F3D7C8] bg-white text-[#5F5A56] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
                 >
                   <Bell size={17} />
-                  <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#FD7124]" />
+                  {unreadNotifications.length > 0 ? <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#FD7124]" /> : null}
                 </button>
 
                 {alertsOpen ? (
                   <div className="absolute right-0 top-12 z-30 w-[320px] rounded-lg border border-[#F3D7C8] bg-white p-3 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-[#2F2C2A]">Priority Alerts</p>
-                      <span className="rounded bg-[#FFEFE6] px-2 py-1 text-xs font-semibold text-[#C95119]">{notifications.length}</span>
+                      <span className="rounded bg-[#FFEFE6] px-2 py-1 text-xs font-semibold text-[#C95119]">
+                        {unreadNotifications.length} unread
+                      </span>
                     </div>
+                    {error ? <p className="mb-3 rounded-md bg-[#FFF4DC] px-3 py-2 text-xs font-semibold text-[#8A4B02]">Using local fallback data</p> : null}
                     <div className="space-y-2">
                       {notifications.map((item) => (
                         <button
                           key={item.title}
                           type="button"
                           onClick={() => openNotificationTarget(item)}
-                          className="group w-full rounded-md border border-[#F3D7C8] bg-[#FFF8F4] p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6]"
+                          className={`group w-full rounded-md border border-[#F3D7C8] p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6] ${
+                            item.read ? 'bg-white opacity-75' : 'bg-[#FFF8F4]'
+                          }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm font-semibold text-[#2F2C2A]">{item.title}</p>
-                            <span className={`h-2.5 w-2.5 rounded-full ${item.tone === 'danger' ? 'bg-[#FD7124]' : item.tone === 'warning' ? 'bg-[#FAA745]' : 'bg-[#C95119]'}`} />
+                            <span className={`h-2.5 w-2.5 rounded-full ${item.read ? 'bg-[#D9C5B9]' : item.tone === 'danger' ? 'bg-[#FD7124]' : item.tone === 'warning' ? 'bg-[#FAA745]' : 'bg-[#C95119]'}`} />
                           </div>
                           <p className="mt-1 text-xs leading-5 text-[#776B63]">{item.detail}</p>
                           <div className="mt-3 flex items-center justify-between gap-3">
@@ -152,14 +167,17 @@ export function ManagerPage({ onNavigate }: ManagerPageProps) {
                   </div>
                 ) : null}
               </div>
-              <RouteLink to="worker" onNavigate={onNavigate}>Worker App</RouteLink>
+              <Button onClick={onLogout}>Logout</Button>
               <Button variant="primary">Create Task</Button>
             </div>
           </div>
         </header>
 
         <div className="px-5 py-6 sm:px-8 lg:px-10">
-          <h1 className="text-2xl font-semibold tracking-normal text-[#2F2C2A]">{activeMeta.title}</h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-2xl font-semibold tracking-normal text-[#2F2C2A]">{activeMeta.title}</h1>
+            {loading ? <span className="rounded bg-[#FFEFE6] px-2 py-1 text-xs font-semibold text-[#C95119]">Loading database</span> : null}
+          </div>
 
           <div className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
             {(['dashboard', 'workers', 'tasks', 'payroll'] as const).map((section) => (

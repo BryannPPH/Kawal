@@ -1,8 +1,8 @@
 import { Calculator, WalletCards } from 'lucide-react';
-import { workers } from '../../../constants/workforce';
+import type { Worker } from '../../../types/workforce';
 import { MetricCard } from '../components/MetricCard';
 
-export function PayrollView() {
+export function PayrollView({ workers }: { workers: Worker[] }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-3">
