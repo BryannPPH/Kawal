@@ -9,6 +9,10 @@ type DashboardViewProps = {
   workers: Worker[];
   tasks: Task[];
   onSelectWorker: (worker: Worker) => void;
+  recommendedTask?: Task;
+  assignmentBusy: string | null;
+  assignmentError: string | null;
+  onAssignTask: (taskId: string, workerId?: string) => void;
 };
 
 const metrics = [
@@ -18,7 +22,16 @@ const metrics = [
   { label: 'High Fatigue', value: '6', detail: '2 fewer than yesterday', icon: ShieldAlert }
 ];
 
-export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }: DashboardViewProps) {
+export function DashboardView({
+  selectedWorker,
+  workers,
+  tasks,
+  onSelectWorker,
+  recommendedTask,
+  assignmentBusy,
+  assignmentError,
+  onAssignTask
+}: DashboardViewProps) {
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-[#F3D7C8] bg-white/65 p-4">
@@ -42,7 +55,14 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
           <p className="mt-1 text-sm text-[#776B63]">Recommended assignment and worker availability are grouped in one operational flow.</p>
         </div>
         <div className="space-y-4">
-          <AssignmentPanel selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
+          <AssignmentPanel
+            selectedWorker={selectedWorker}
+            task={recommendedTask}
+            busy={Boolean(recommendedTask && assignmentBusy === recommendedTask.id)}
+            error={assignmentError}
+            onSelectWorker={onSelectWorker}
+            onAssign={() => recommendedTask ? onAssignTask(recommendedTask.id, selectedWorker.id) : undefined}
+          />
           <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
         </div>
       </section>

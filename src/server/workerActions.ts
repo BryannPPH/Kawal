@@ -7,9 +7,10 @@ import { getLatestPpeCheck, runPpeCheck } from './ppe';
 
 type WorkerActionStatus = Extract<WorkerStatus, 'waiting' | 'working' | 'break' | 'done'>;
 
-export function getWorkerAppData(workerId: string) {
+export async function getWorkerAppData(workerId: string) {
   const worker = getWorkers().find((item) => item.id === workerId) ?? null;
-  const tasks = worker ? getTasks().filter((task) => task.owner === worker.name || task.schedulerRecommendation.selectedWorkerRecommendations.some((candidate) => candidate.workerId === worker.id)) : [];
+  const allTasks = await getTasks();
+  const tasks = worker ? allTasks.filter((task) => task.owner === worker.name) : [];
   const notifications = getNotifications().filter((notification) => notification.targetWorkerId === workerId);
   const activeIncident = db
     .query('SELECT * FROM emergency_incidents WHERE worker_id = ? AND state != ? ORDER BY opened_at DESC LIMIT 1')
@@ -26,12 +27,69 @@ export function getWorkerAppData(workerId: string) {
   };
 }
 
-export function updateWorkerShiftStatus(workerId: string, status: WorkerActionStatus) {
+export async function acceptWorkerAssignment(workerId: string, taskId?: string) {
+  const worker = getRequiredWorker(workerId);
+  const assignedTask = await getWorkerTask(worker, taskId, ['Assigned']);
+
+  if (!assignedTask) {
+    throw new Error('No assigned task is waiting for acceptance');
+  }
+
+  db.prepare('UPDATE tasks SET status = ?, due = ?, tone = ? WHERE id = ?').run(
+    'Accepted',
+    'Accepted',
+    assignedTask.priority === 'Critical' ? 'danger' : assignedTask.priority === 'High' ? 'warning' : 'neutral',
+    assignedTask.id
+  );
+  db.prepare('UPDATE workers SET status = ?, task = ?, zone = ?, workload = ? WHERE id = ?').run(
+    'waiting',
+    assignedTask.title,
+    assignedTask.zone,
+    assignedTask.workload || worker.workload,
+    workerId
+  );
+
+  createManagerNotification({
+    title: 'Assignment accepted',
+    detail: `${worker.name} accepted ${assignedTask.title} in ${assignedTask.zone}.`,
+    tone: 'success',
+    targetLabel: 'View task',
+    targetSection: 'tasks',
+    targetWorkerId: worker.id
+  });
+
+  return getWorkerAppData(workerId);
+}
+
+export async function updateWorkerShiftStatus(workerId: string, status: WorkerActionStatus) {
   if (status === 'working') {
     const latestPpeCheck = getLatestPpeCheck(workerId);
 
     if (latestPpeCheck?.status !== 'PASSED') {
       throw new Error('PPE verification is required before starting task');
+    }
+
+    const worker = getRequiredWorker(workerId);
+    const task = await getWorkerTask(worker, undefined, ['Accepted', 'Assigned']);
+
+    if (!task) {
+      throw new Error('Accept an assignment before starting work');
+    }
+
+    db.prepare('UPDATE tasks SET status = ?, due = ?, tone = ? WHERE id = ?').run(
+      'In progress',
+      'In progress',
+      task.priority === 'Critical' ? 'danger' : 'warning',
+      task.id
+    );
+  }
+
+  if (status === 'waiting') {
+    const worker = getRequiredWorker(workerId);
+    const task = await getWorkerTask(worker, undefined, ['In progress']);
+
+    if (task) {
+      db.prepare('UPDATE tasks SET status = ?, due = ? WHERE id = ?').run('Accepted', 'Paused', task.id);
     }
   }
 
@@ -41,7 +99,7 @@ export function updateWorkerShiftStatus(workerId: string, status: WorkerActionSt
 
 export async function performWorkerPpeCheck(workerId: string, imageDataUrl: string) {
   const worker = getRequiredWorker(workerId);
-  const task = getTasks().find((item) => item.owner === worker.name || item.schedulerRecommendation.selectedWorkerRecommendations.some((candidate) => candidate.workerId === worker.id));
+  const task = await getWorkerTask(worker);
   const check = await runPpeCheck({
     workerId,
     taskId: task?.id ?? null,
@@ -76,9 +134,13 @@ export async function performWorkerPpeCheck(workerId: string, imageDataUrl: stri
 
 export function completeWorkerAssignment(workerId: string) {
   const worker = getRequiredWorker(workerId);
-  const activeTasks = getTasks().filter((task) => task.owner === worker.name && !['Done', 'Review'].includes(task.status));
+  return completeWorkerAssignmentAsync(worker);
+}
 
-  db.prepare('UPDATE workers SET status = ?, time = ? WHERE id = ?').run('done', worker.time, workerId);
+async function completeWorkerAssignmentAsync(worker: ReturnType<typeof getRequiredWorker>) {
+  const activeTasks = (await getTasks()).filter((task) => task.owner === worker.name && !['Done', 'Review'].includes(task.status));
+
+  db.prepare('UPDATE workers SET status = ?, time = ? WHERE id = ?').run('done', worker.time, worker.id);
 
   for (const task of activeTasks) {
     db.prepare('UPDATE tasks SET status = ?, due = ?, tone = ? WHERE id = ?').run('Review', 'Ready', 'success', task.id);
@@ -93,10 +155,10 @@ export function completeWorkerAssignment(workerId: string) {
     targetWorkerId: worker.id
   });
 
-  return getWorkerAppData(workerId);
+  return getWorkerAppData(worker.id);
 }
 
-export function reportWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
+export async function reportWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
   const worker = getRequiredWorker(workerId);
   const hazardType = input.hazardType?.trim() || 'Hazard';
   const note = input.note?.trim();
@@ -113,7 +175,7 @@ export function reportWorkerHazard(workerId: string, input: { hazardType?: strin
   return getWorkerAppData(workerId);
 }
 
-export function requestWorkerRest(workerId: string) {
+export async function requestWorkerRest(workerId: string) {
   const worker = getRequiredWorker(workerId);
   const device = getAssignedDevice(workerId);
 
@@ -127,7 +189,7 @@ export function requestWorkerRest(workerId: string) {
       targetSection: 'workers',
       targetWorkerId: worker.id
     });
-    return { ...getWorkerAppData(workerId), action: { ok: true, fallback: true } };
+    return { ...(await getWorkerAppData(workerId)), action: { ok: true, fallback: true } };
   }
 
   const result = processIoTMessage(
@@ -139,10 +201,10 @@ export function requestWorkerRest(workerId: string) {
     }))
   );
 
-  return { ...getWorkerAppData(workerId), action: result };
+  return { ...(await getWorkerAppData(workerId)), action: result };
 }
 
-export function triggerWorkerSos(workerId: string) {
+export async function triggerWorkerSos(workerId: string) {
   const worker = getRequiredWorker(workerId);
   const device = getAssignedDevice(workerId);
 
@@ -166,7 +228,7 @@ export function triggerWorkerSos(workerId: string) {
       targetWorkerId: worker.id
     });
 
-    return { ...getWorkerAppData(workerId), action: { ok: true, fallback: true, incidentId } };
+    return { ...(await getWorkerAppData(workerId)), action: { ok: true, fallback: true, incidentId } };
   }
 
   const result = processIoTMessage(
@@ -177,10 +239,10 @@ export function triggerWorkerSos(workerId: string) {
     }))
   );
 
-  return { ...getWorkerAppData(workerId), action: result };
+  return { ...(await getWorkerAppData(workerId)), action: result };
 }
 
-export function readWorkerNotification(workerId: string, notificationId: string) {
+export async function readWorkerNotification(workerId: string, notificationId: string) {
   markNotificationRead(notificationId);
   return getWorkerAppData(workerId);
 }
@@ -207,6 +269,16 @@ function getAssignedDevice(workerId: string) {
       firmware_version: string | null;
     }, [string]>('SELECT * FROM iot_devices WHERE assigned_worker_id = ? LIMIT 1')
     .get(workerId);
+}
+
+async function getWorkerTask(worker: ReturnType<typeof getRequiredWorker>, taskId?: string, statuses?: string[]) {
+  const tasks = await getTasks();
+  return tasks.find((task) => {
+    const belongsToWorker = task.owner === worker.name;
+    const matchesTask = !taskId || task.id === taskId;
+    const matchesStatus = !statuses?.length || statuses.includes(task.status);
+    return belongsToWorker && matchesTask && matchesStatus;
+  });
 }
 
 function makeEnvelope(

@@ -84,6 +84,9 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
     unit: input.unit.trim(),
     deadline: input.deadline.trim(),
     priority: input.priority,
+    temperatureC: input.temperatureC ?? null,
+    humidityPct: input.humidityPct ?? null,
+    workload: input.workload.trim(),
     notes: input.notes?.trim() ?? '',
     schedulerRecommendation,
     status: 'Open',
@@ -93,6 +96,56 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
 
   const [row] = await insertRows<SupabaseTaskRow>('tasks', [taskToRow(task)]);
   return mapTask(row);
+}
+
+export async function assignSupabaseTaskToWorker(taskId: string, workerId: string): Promise<WorkforceData> {
+  const [worker] = await selectRows<SupabaseWorkerRow>('workers', `select=*&id=eq.${encodeFilterValue(workerId)}&limit=1`);
+  const [task] = await selectRows<SupabaseTaskRow>('tasks', `select=*&id=eq.${encodeFilterValue(taskId)}&limit=1`);
+
+  if (!worker) {
+    throw new Error('Worker not found');
+  }
+
+  if (!task) {
+    throw new Error('Task not found');
+  }
+
+  const title = task.task_template || task.title;
+  const zone = task.zone || task.location || worker.zone;
+  const workload = task.task_workload || worker.workload;
+  const tone = task.priority === 'Critical' ? 'danger' : task.priority === 'High' ? 'warning' : 'neutral';
+
+  await patchRows('tasks', `id=eq.${encodeFilterValue(taskId)}`, {
+    owner: worker.name,
+    status: 'Assigned',
+    due: 'Waiting accept',
+    tone
+  });
+
+  await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, {
+    task: title,
+    status: 'waiting',
+    zone,
+    workload
+  });
+
+  await patchRows('iot_devices', `assigned_worker_id=eq.${encodeFilterValue(workerId)}`, {
+    assigned_worker_id: workerId,
+    assigned_zone_id: zone,
+    assigned_task_id: taskId,
+    updated_at: new Date().toISOString()
+  });
+
+  await createSupabaseNotification({
+    title: 'New assignment',
+    detail: `${title} assigned to ${worker.name} in ${zone}.`,
+    tone: 'warning',
+    targetLabel: 'Open worker task',
+    targetSection: 'workers',
+    targetWorkerId: workerId
+  });
+
+  return getSupabaseWorkforceData();
 }
 
 export async function markSupabaseNotificationRead(notificationId: string): Promise<Notification | null> {
@@ -184,7 +237,74 @@ export async function getSupabaseWorkerAppData(workerId: string) {
   };
 }
 
+export async function acceptSupabaseWorkerAssignment(workerId: string, taskId?: string) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const task = data.tasks.find((item) => (!taskId || item.id === taskId) && item.status === 'Assigned');
+
+  if (!task) {
+    throw new Error('No assigned task is waiting for acceptance');
+  }
+
+  await patchRows('tasks', `id=eq.${encodeFilterValue(task.id)}`, {
+    status: 'Accepted',
+    due: 'Accepted',
+    tone: task.priority === 'Critical' ? 'danger' : task.priority === 'High' ? 'warning' : 'neutral'
+  });
+  await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, {
+    status: 'waiting',
+    task: task.title,
+    zone: task.zone,
+    workload: task.workload || data.worker.workload
+  });
+  await createSupabaseNotification({
+    title: 'Assignment accepted',
+    detail: `${data.worker.name} accepted ${task.title} in ${task.zone}.`,
+    tone: 'success',
+    targetLabel: 'View task',
+    targetSection: 'tasks',
+    targetWorkerId: workerId
+  });
+
+  return getSupabaseWorkerAppData(workerId);
+}
+
 export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 'waiting' | 'working' | 'break' | 'done') {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  if (status === 'working') {
+    const task = data.tasks.find((item) => item.status === 'Accepted' || item.status === 'Assigned');
+
+    if (!task) {
+      throw new Error('Accept an assignment before starting work');
+    }
+
+    await patchRows('tasks', `id=eq.${encodeFilterValue(task.id)}`, {
+      status: 'In progress',
+      due: 'In progress',
+      tone: task.priority === 'Critical' ? 'danger' : 'warning'
+    });
+  }
+
+  if (status === 'waiting') {
+    const task = data.tasks.find((item) => item.status === 'In progress');
+
+    if (task) {
+      await patchRows('tasks', `id=eq.${encodeFilterValue(task.id)}`, {
+        status: 'Accepted',
+        due: 'Paused'
+      });
+    }
+  }
+
   await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status });
   return getSupabaseWorkerAppData(workerId);
 }
@@ -701,6 +821,9 @@ function mapTask(row: SupabaseTaskRow): Task {
     unit: row.unit,
     deadline: row.deadline || row.due,
     priority: row.priority,
+    temperatureC: row.temperature_c,
+    humidityPct: row.humidity_pct,
+    workload: row.task_workload,
     notes: row.notes,
     schedulerRecommendation: parseSchedulerRecommendation(row.scheduler_recommendation),
     status: row.status,
@@ -722,6 +845,9 @@ function taskToRow(task: Task): SupabaseTaskRow {
     unit: task.unit,
     deadline: task.deadline,
     priority: task.priority,
+    temperature_c: task.temperatureC,
+    humidity_pct: task.humidityPct,
+    task_workload: task.workload,
     notes: task.notes,
     scheduler_recommendation: task.schedulerRecommendation,
     status: task.status,
@@ -789,19 +915,34 @@ function makeSchedulerPlaceholder(input: CreateTaskInput, availableWorkers: Work
     }));
 
   return {
+    totalWorkerHours: Math.max(1, Math.round((input.quantity / Math.max(workerCount, 1)) * 10) / 10),
     recommendedWorkerCount: workerCount,
+    recommendedCrewSize: workerCount,
     estimatedTaskDuration: urgent ? '2-4 hours placeholder estimate' : '1-3 hours placeholder estimate',
+    estimatedDuration: urgent ? '2-4 hours placeholder estimate' : '1-3 hours placeholder estimate',
     recommendedStartTime: urgent ? 'Next safe available window' : 'Next normal scheduling window',
     estimatedCompletionTime: input.deadline,
+    estimatedFinishTime: input.deadline,
     selectedWorkerRecommendations: candidateWorkers,
+    assignmentEngineVersion: 'supabase-placeholder-assignment-v1',
     expectedProductivityRate: `${Math.max(1, Math.round(input.quantity / Math.max(workerCount, 1)))} ${input.unit} per worker placeholder`,
     deadlineFeasibilityStatus: urgent ? 'Needs supervisor confirmation' : 'Likely feasible under placeholder rules',
+    capacityEstimatorVersion: 'supabase-placeholder-capacity-v1',
     requiredPpeAndCertifications: ['Helmet', 'Safety shoes', 'High-vis vest', urgent ? 'Supervisor safety sign-off' : 'Standard toolbox briefing'],
     dependencyStatus: 'Placeholder assumes dependencies are clear; future scheduler will check task graph.',
     currentEnvironmentalConditions: 'Placeholder reads latest Supabase telemetry when scheduler integration is deployed.',
     safetyAndOperationalWarnings: urgent
       ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.']
       : ['Confirm zone access before dispatch.'],
+    chronosForecast: {
+      futureProductivity: 'Pending Supabase forecast',
+      delayPrediction: urgent ? 'Supervisor confirmation required before start.' : 'No delay predicted by placeholder.',
+      suggestedAdditionalCrew: 0,
+      forecastVersion: 'supabase-placeholder-chronos-v1',
+      confidence: 'COLD_START',
+      modelStatus: 'UNAVAILABLE',
+      forecastValues: []
+    },
     schedulerStatus: 'Placeholder scheduler result for the Supabase data source.'
   };
 }
@@ -824,17 +965,29 @@ function parseSchedulerRecommendation(value: unknown): SchedulerRecommendation {
   }
 
   return fallbackTasks[0]?.schedulerRecommendation ?? {
+    totalWorkerHours: 0,
     recommendedWorkerCount: 1,
+    recommendedCrewSize: 1,
     estimatedTaskDuration: 'Pending',
+    estimatedDuration: 'Pending',
     recommendedStartTime: 'Pending',
     estimatedCompletionTime: 'Pending',
+    estimatedFinishTime: 'Pending',
     selectedWorkerRecommendations: [],
+    assignmentEngineVersion: 'pending',
     expectedProductivityRate: 'Pending',
     deadlineFeasibilityStatus: 'Pending',
+    capacityEstimatorVersion: 'pending',
     requiredPpeAndCertifications: [],
     dependencyStatus: 'Pending',
     currentEnvironmentalConditions: 'Pending',
     safetyAndOperationalWarnings: [],
+    chronosForecast: {
+      futureProductivity: 'Pending',
+      delayPrediction: 'Pending',
+      suggestedAdditionalCrew: 0,
+      forecastVersion: 'pending'
+    },
     schedulerStatus: 'Pending'
   };
 }
@@ -871,6 +1024,9 @@ type CreateTaskInput = {
   unit: string;
   deadline: string;
   priority: string;
+  temperatureC?: number | null;
+  humidityPct?: number | null;
+  workload: string;
   notes?: string;
   owner?: string;
 };
@@ -900,6 +1056,9 @@ type SupabaseTaskRow = {
   unit: string;
   deadline: string;
   priority: string;
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  task_workload: string;
   notes: string;
   scheduler_recommendation: unknown;
   status: string;

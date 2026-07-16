@@ -224,6 +224,10 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
     runAction('status', { body: JSON.stringify({ status }) }, status === 'working' ? 'Shift started.' : status === 'waiting' ? 'Task paused.' : 'Status updated.');
   };
 
+  const acceptAssignment = () => {
+    runAction('accept', { body: JSON.stringify({ taskId: currentTask?.id }) }, 'Assignment accepted. Complete PPE check to start.');
+  };
+
   const startTaskWithPpe = () => {
     setPpeError(null);
     setPpeModalOpen(true);
@@ -379,13 +383,14 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
               activeIncident={data.activeIncident}
               latestPpeCheck={data.latestPpeCheck ?? null}
               busyAction={busyAction}
+              onAccept={acceptAssignment}
               onStart={startTaskWithPpe}
               onPause={() => submitStatus('waiting')}
               onRest={() => runAction('rest-request', {}, 'Rest request sent.')}
               onComplete={() => runAction('complete', {}, 'Assignment sent for review.')}
             />
           ) : null}
-          {worker && activeTab === 'tasks' ? <TasksPanel tasks={data.tasks} worker={worker} /> : null}
+          {worker && activeTab === 'tasks' ? <TasksPanel tasks={data.tasks} worker={worker} busyAction={busyAction} onAccept={(taskId) => runAction('accept', { body: JSON.stringify({ taskId }) }, 'Assignment accepted.')} /> : null}
           {worker && activeTab === 'report' ? (
             <ReportPanel
               hazardType={hazardType}
@@ -468,6 +473,7 @@ function HomePanel({
   activeIncident,
   latestPpeCheck,
   busyAction,
+  onAccept,
   onStart,
   onPause,
   onRest,
@@ -481,12 +487,15 @@ function HomePanel({
   activeIncident: WorkerAppData['activeIncident'];
   latestPpeCheck: PpeCheckResult | null;
   busyAction: string | null;
+  onAccept: () => void;
   onStart: () => void;
   onPause: () => void;
   onRest: () => void;
   onComplete: () => void;
 }) {
   const working = worker.status === 'working';
+  const assignmentPending = task?.status === 'Assigned';
+  const assignmentAccepted = Boolean(task && ['Accepted', 'In progress', 'Review'].includes(task.status)) || working || worker.status === 'done';
 
   return (
     <div className="flex min-h-full flex-col space-y-4">
@@ -497,7 +506,7 @@ function HomePanel({
             <h1 className="mt-2 truncate text-2xl font-semibold tracking-normal">{task?.title ?? worker.task}</h1>
             <p className="mt-2 text-sm text-white/85">{task?.project ?? 'Kawal Site'} / {worker.zone}</p>
           </div>
-          <Pill className="bg-white/20 text-white">{riskLevel} Risk</Pill>
+          <Pill className="bg-white/20 text-white">{assignmentPending ? 'New Assignment' : `${riskLevel} Risk`}</Pill>
         </div>
         <div className="mt-5 grid grid-cols-3 gap-2 text-sm">
           <MetricBox label="Duration" value={worker.time} />
@@ -517,6 +526,7 @@ function HomePanel({
         </div>
         <ul className="space-y-2">
           <ProcedureStep done={working || worker.status === 'done'} icon={UserRoundCheck} label="Checked in for assigned zone" />
+          <ProcedureStep done={assignmentAccepted} icon={ClipboardCheck} label="Assignment accepted" />
           <ProcedureStep done={latestPpeCheck?.status === 'PASSED'} icon={ShieldCheck} label="Helmet and harness verified by camera" />
           <ProcedureStep done={Boolean(task)} icon={MapPin} label="Task and location confirmed" />
           <ProcedureStep done={worker.status === 'done'} icon={BriefcaseBusiness} label="Completion sent for review" />
@@ -529,14 +539,21 @@ function HomePanel({
       </section>
 
       <section className="mt-auto grid gap-2 pt-2">
-        <Button
-          variant={working ? 'secondary' : 'primary'}
-          className="h-12"
-          onClick={working ? onPause : onStart}
-          disabled={busyAction === 'status'}
-        >
-          {working ? 'Pause Task' : 'Start Task'}
-        </Button>
+        {assignmentPending ? (
+          <Button variant="primary" className="h-12" onClick={onAccept} disabled={busyAction === 'accept'}>
+            <ClipboardCheck size={16} />
+            Accept Assignment
+          </Button>
+        ) : (
+          <Button
+            variant={working ? 'secondary' : 'primary'}
+            className="h-12"
+            onClick={working ? onPause : onStart}
+            disabled={busyAction === 'status' || !assignmentAccepted || !task}
+          >
+            {working ? 'Pause Task' : 'Start Task'}
+          </Button>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <Button onClick={onRest} disabled={busyAction === 'rest-request'}>
             <TimerReset size={16} />
@@ -552,7 +569,17 @@ function HomePanel({
   );
 }
 
-function TasksPanel({ tasks, worker }: { tasks: Task[]; worker: Worker }) {
+function TasksPanel({
+  tasks,
+  worker,
+  busyAction,
+  onAccept
+}: {
+  tasks: Task[];
+  worker: Worker;
+  busyAction: string | null;
+  onAccept: (taskId: string) => void;
+}) {
   return (
     <section className="min-h-full">
       <div className="mb-4">
@@ -581,6 +608,12 @@ function TasksPanel({ tasks, worker }: { tasks: Task[]; worker: Worker }) {
                 <p className="mt-3 rounded-md bg-white px-3 py-2 text-xs font-semibold text-[#8A4B02]">
                   {task.schedulerRecommendation.safetyAndOperationalWarnings[0]}
                 </p>
+              ) : null}
+              {task.status === 'Assigned' ? (
+                <Button variant="primary" className="mt-3 h-10 w-full" onClick={() => onAccept(task.id)} disabled={busyAction === 'accept'}>
+                  <ClipboardCheck size={16} />
+                  Accept Assignment
+                </Button>
               ) : null}
             </div>
           ))

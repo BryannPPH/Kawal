@@ -1,4 +1,4 @@
-import { authenticateUser, createTask, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
+import { assignTaskToWorker, authenticateUser, createTask, getNotifications, getTasks, getUsers, getWorkers, getWorkforceData, initializeDatabase, markNotificationRead } from './database';
 import { estimateCapacity } from './capacityEstimator';
 import { forecastProductivity } from './chronosForecasting';
 import {
@@ -50,6 +50,8 @@ import {
   listSupabaseDevices,
   markSupabaseNotificationRead,
   completeSupabaseWorkerAssignment,
+  assignSupabaseTaskToWorker,
+  acceptSupabaseWorkerAssignment,
   reportSupabaseWorkerHazard,
   requestSupabaseWorkerRest,
   shouldUseSupabase,
@@ -58,6 +60,7 @@ import {
   updateSupabaseIncidentState
 } from './supabase';
 import {
+  acceptWorkerAssignment,
   completeWorkerAssignment,
   getWorkerAppData,
   performWorkerPpeCheck,
@@ -152,7 +155,16 @@ const server = Bun.serve({
     const workerAppMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/app$/);
 
     if (request.method === 'GET' && workerAppMatch) {
-      return jsonResponse(useSupabase ? await getSupabaseWorkerAppData(workerAppMatch[1]) : getWorkerAppData(workerAppMatch[1]));
+      return jsonResponse(useSupabase ? await getSupabaseWorkerAppData(workerAppMatch[1]) : await getWorkerAppData(workerAppMatch[1]));
+    }
+
+    const workerAcceptMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/accept$/);
+
+    if (request.method === 'POST' && workerAcceptMatch) {
+      const body = await readJsonBody<{ taskId?: string }>(request);
+      return jsonResponse(useSupabase
+        ? await acceptSupabaseWorkerAssignment(workerAcceptMatch[1], body.taskId)
+        : await acceptWorkerAssignment(workerAcceptMatch[1], body.taskId));
     }
 
     const workerStatusMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/status$/);
@@ -166,7 +178,7 @@ const server = Bun.serve({
 
       return jsonResponse(useSupabase
         ? await updateSupabaseWorkerShiftStatus(workerStatusMatch[1], body.status)
-        : updateWorkerShiftStatus(workerStatusMatch[1], body.status));
+        : await updateWorkerShiftStatus(workerStatusMatch[1], body.status));
     }
 
     const workerPpeCheckMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/ppe-check$/);
@@ -190,7 +202,7 @@ const server = Bun.serve({
     if (request.method === 'POST' && workerCompleteMatch) {
       return jsonResponse(useSupabase
         ? await completeSupabaseWorkerAssignment(workerCompleteMatch[1])
-        : completeWorkerAssignment(workerCompleteMatch[1]));
+        : await completeWorkerAssignment(workerCompleteMatch[1]));
     }
 
     const workerHazardMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/hazards$/);
@@ -204,7 +216,7 @@ const server = Bun.serve({
 
       return jsonResponse(useSupabase
         ? await reportSupabaseWorkerHazard(workerHazardMatch[1], body)
-        : reportWorkerHazard(workerHazardMatch[1], body));
+        : await reportWorkerHazard(workerHazardMatch[1], body));
     }
 
     const workerRestRequestMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/rest-request$/);
@@ -212,7 +224,7 @@ const server = Bun.serve({
     if (request.method === 'POST' && workerRestRequestMatch) {
       return jsonResponse(useSupabase
         ? await requestSupabaseWorkerRest(workerRestRequestMatch[1])
-        : requestWorkerRest(workerRestRequestMatch[1]), { status: 202 });
+        : await requestWorkerRest(workerRestRequestMatch[1]), { status: 202 });
     }
 
     const workerSosMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/sos$/);
@@ -220,7 +232,7 @@ const server = Bun.serve({
     if (request.method === 'POST' && workerSosMatch) {
       return jsonResponse(useSupabase
         ? await triggerSupabaseWorkerSos(workerSosMatch[1])
-        : triggerWorkerSos(workerSosMatch[1]), { status: 202 });
+        : await triggerWorkerSos(workerSosMatch[1]), { status: 202 });
     }
 
     const workerNotificationReadMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/notifications\/([^/]+)\/read$/);
@@ -228,11 +240,25 @@ const server = Bun.serve({
     if (request.method === 'PATCH' && workerNotificationReadMatch) {
       return jsonResponse(useSupabase
         ? await markSupabaseNotificationRead(workerNotificationReadMatch[2])
-        : readWorkerNotification(workerNotificationReadMatch[1], workerNotificationReadMatch[2]));
+        : await readWorkerNotification(workerNotificationReadMatch[1], workerNotificationReadMatch[2]));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/tasks') {
       return jsonResponse(useSupabase ? await getSupabaseTasks() : await getTasks());
+    }
+
+    const taskAssignMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/assign$/);
+
+    if (request.method === 'POST' && taskAssignMatch) {
+      const body = await readJsonBody<{ workerId?: string }>(request);
+
+      if (!body.workerId?.trim()) {
+        return jsonResponse({ error: 'workerId is required' }, { status: 400 });
+      }
+
+      return jsonResponse(useSupabase
+        ? await assignSupabaseTaskToWorker(taskAssignMatch[1], body.workerId)
+        : await assignTaskToWorker(taskAssignMatch[1], body.workerId));
     }
 
     if (request.method === 'POST' && url.pathname === '/api/capacity/estimate') {
