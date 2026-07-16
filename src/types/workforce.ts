@@ -18,11 +18,39 @@ export type Worker = {
   match: number;
 };
 
+export type SchedulerRecommendation = {
+  recommendedWorkerCount: number;
+  estimatedTaskDuration: string;
+  recommendedStartTime: string;
+  estimatedCompletionTime: string;
+  selectedWorkerRecommendations: Array<{
+    workerId: string;
+    workerName: string;
+    explanation: string;
+  }>;
+  expectedProductivityRate: string;
+  deadlineFeasibilityStatus: string;
+  requiredPpeAndCertifications: string[];
+  dependencyStatus: string;
+  currentEnvironmentalConditions: string;
+  safetyAndOperationalWarnings: string[];
+  schedulerStatus: string;
+};
+
 export type Task = {
   id: string;
   title: string;
   owner: string;
   location: string;
+  taskTemplate: string;
+  project: string;
+  zone: string;
+  quantity: number;
+  unit: string;
+  deadline: string;
+  priority: string;
+  notes: string;
+  schedulerRecommendation: SchedulerRecommendation;
   status: string;
   due: string;
   tone: Tone;

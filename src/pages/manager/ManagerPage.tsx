@@ -1,4 +1,4 @@
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
@@ -71,10 +71,15 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const [activeSection, setActiveSection] = useState<ManagerSection>(getManagerSectionFromPath);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskOwner, setTaskOwner] = useState('Unassigned');
-  const [taskLocation, setTaskLocation] = useState('Zone C');
-  const [taskDue, setTaskDue] = useState('Today');
+  const [taskTemplate, setTaskTemplate] = useState('');
+  const [taskProject, setTaskProject] = useState('');
+  const [taskZone, setTaskZone] = useState('');
+  const [taskQuantity, setTaskQuantity] = useState('');
+  const [taskUnit, setTaskUnit] = useState('');
+  const [taskDeadline, setTaskDeadline] = useState('');
+  const [taskPriority, setTaskPriority] = useState('');
+  const [taskNotes, setTaskNotes] = useState('');
+  const [taskOwner, setTaskOwner] = useState('');
   const [taskError, setTaskError] = useState<string | null>(null);
   const activeMeta = managerSectionMeta[activeSection];
   const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId) ?? workers[0];
@@ -98,15 +103,25 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
 
     try {
       await createTask({
-        title: taskTitle,
-        owner: taskOwner,
-        location: taskLocation,
-        due: taskDue
+        taskTemplate,
+        project: taskProject,
+        zone: taskZone,
+        quantity: Number(taskQuantity),
+        unit: taskUnit,
+        deadline: taskDeadline,
+        priority: taskPriority,
+        notes: taskNotes,
+        owner: taskOwner
       });
-      setTaskTitle('');
-      setTaskOwner('Unassigned');
-      setTaskLocation('Zone C');
-      setTaskDue('Today');
+      setTaskTemplate('');
+      setTaskProject('');
+      setTaskZone('');
+      setTaskQuantity('');
+      setTaskUnit('');
+      setTaskDeadline('');
+      setTaskPriority('');
+      setTaskNotes('');
+      setTaskOwner('');
       setCreateTaskOpen(false);
       selectSection('tasks');
     } catch (caughtError) {
@@ -251,37 +266,72 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
 
       {createTaskOpen ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-[#2F2C2A]/30 px-4">
-          <form onSubmit={submitTask} className="w-full max-w-[480px] rounded-lg border border-[#F3D7C8] bg-white p-5 shadow-[0_24px_80px_rgba(76,48,35,0.18)]">
+          <form onSubmit={submitTask} className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-lg border border-[#F3D7C8] bg-white p-5 shadow-[0_24px_80px_rgba(76,48,35,0.18)]">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-semibold text-[#2F2C2A]">Create Task</p>
-                <p className="mt-1 text-sm text-[#776B63]">Add the work location so scheduling and zone review have a clear target.</p>
+                <p className="mt-1 text-sm text-[#776B63]">Capture the task workflow, then review the placeholder scheduler recommendation in Tasks.</p>
               </div>
-              <button type="button" onClick={() => setCreateTaskOpen(false)} className="rounded-md px-2 py-1 text-sm font-semibold text-[#776B63] hover:bg-[#FFEFE6]">Close</button>
+              <button
+                type="button"
+                aria-label="Close create task"
+                title="Close"
+                onClick={() => setCreateTaskOpen(false)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FD7124] focus-visible:ring-offset-2"
+              >
+                <X size={16} />
+              </button>
             </div>
 
             <div className="mt-5 space-y-4">
-              <label className="block">
-                <span className="text-sm font-semibold text-[#2F2C2A]">Task name</span>
-                <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="field-input mt-2" placeholder="Concrete pour inspection" required />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-[#2F2C2A]">Location</span>
-                <input value={taskLocation} onChange={(event) => setTaskLocation(event.target.value)} className="field-input mt-2" placeholder="Zone C, Gate 2, Level 4" required />
-              </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="text-sm font-semibold text-[#2F2C2A]">Assignee</span>
-                  <select value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="field-input mt-2">
-                    <option>Unassigned</option>
-                    {workers.map((worker) => <option key={worker.id}>{worker.name}</option>)}
-                  </select>
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Task Template</span>
+                  <input value={taskTemplate} onChange={(event) => setTaskTemplate(event.target.value)} className="field-input mt-2" placeholder="Task template" required />
                 </label>
                 <label className="block">
-                  <span className="text-sm font-semibold text-[#2F2C2A]">Due</span>
-                  <input value={taskDue} onChange={(event) => setTaskDue(event.target.value)} className="field-input mt-2" placeholder="Today" />
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Project</span>
+                  <input value={taskProject} onChange={(event) => setTaskProject(event.target.value)} className="field-input mt-2" placeholder="Project" required />
                 </label>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Zone</span>
+                  <input value={taskZone} onChange={(event) => setTaskZone(event.target.value)} className="field-input mt-2" placeholder="Zone" required />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Deadline</span>
+                  <input value={taskDeadline} onChange={(event) => setTaskDeadline(event.target.value)} className="field-input mt-2" placeholder="Deadline" required />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Quantity</span>
+                  <input value={taskQuantity} onChange={(event) => setTaskQuantity(event.target.value)} type="number" min="1" className="field-input mt-2" placeholder="Quantity" required />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Unit</span>
+                  <input value={taskUnit} onChange={(event) => setTaskUnit(event.target.value)} className="field-input mt-2" placeholder="Unit" required />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-semibold text-[#2F2C2A]">Priority</span>
+                  <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)} className="field-input mt-2" required>
+                    <option value="">Select priority</option>
+                    {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority}>{priority}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#2F2C2A]">Selected worker</span>
+                <select value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="field-input mt-2">
+                  <option value="">Select worker</option>
+                  {workers.map((worker) => <option key={worker.id}>{worker.name}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#2F2C2A]">Notes</span>
+                <textarea value={taskNotes} onChange={(event) => setTaskNotes(event.target.value)} className="field-input mt-2 min-h-24 py-3" placeholder="Notes" />
+              </label>
             </div>
 
             {taskError ? <p className="mt-4 rounded-md bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{taskError}</p> : null}

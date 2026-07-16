@@ -107,17 +107,41 @@ const server = Bun.serve({
     }
 
     if (request.method === 'POST' && url.pathname === '/api/tasks') {
-      const body = await readJsonBody<{ title?: string; owner?: string; location?: string; due?: string }>(request);
+      const body = await readJsonBody<{
+        taskTemplate?: string;
+        project?: string;
+        zone?: string;
+        quantity?: number;
+        unit?: string;
+        deadline?: string;
+        priority?: string;
+        notes?: string;
+        owner?: string;
+      }>(request);
 
-      if (!body.title?.trim() || !body.location?.trim()) {
-        return jsonResponse({ error: 'Task title and location are required' }, { status: 400 });
+      if (
+        !body.taskTemplate?.trim() ||
+        !body.project?.trim() ||
+        !body.zone?.trim() ||
+        typeof body.quantity !== 'number' ||
+        body.quantity <= 0 ||
+        !body.unit?.trim() ||
+        !body.deadline?.trim() ||
+        !body.priority?.trim()
+      ) {
+        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, and priority are required' }, { status: 400 });
       }
 
       return jsonResponse(createTask({
-        title: body.title,
-        owner: body.owner,
-        location: body.location,
-        due: body.due
+        taskTemplate: body.taskTemplate,
+        project: body.project,
+        zone: body.zone,
+        quantity: body.quantity,
+        unit: body.unit,
+        deadline: body.deadline,
+        priority: body.priority,
+        notes: body.notes,
+        owner: body.owner
       }), { status: 201 });
     }
 

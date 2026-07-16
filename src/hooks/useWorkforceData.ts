@@ -79,7 +79,17 @@ export function useWorkforceData() {
     }
   };
 
-  const createTask = async (input: { title: string; owner?: string; location: string; due?: string }) => {
+  const createTask = async (input: {
+    taskTemplate: string;
+    project: string;
+    zone: string;
+    quantity: number;
+    unit: string;
+    deadline: string;
+    priority: string;
+    notes?: string;
+    owner?: string;
+  }) => {
     const response = await fetch('/api/tasks', {
       method: 'POST',
       headers: {

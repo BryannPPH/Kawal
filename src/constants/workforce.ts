@@ -1,4 +1,4 @@
-import type { Notification, Task, Tone, Worker, WorkerStatus } from '../types/workforce';
+import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus } from '../types/workforce';
 
 export const workers: Worker[] = [
   {
@@ -82,11 +82,69 @@ export const workers: Worker[] = [
 ];
 
 export const tasks: Task[] = [
-  { id: 'steel-beam-install', title: 'Steel beam install', owner: 'Budi Santoso', location: 'Zone C', status: 'In progress', due: '2h 15m', tone: 'warning' },
-  { id: 'harness-audit', title: 'Harness audit', owner: 'Dewi Lestari', location: 'Zone B', status: 'Assigned', due: '45m', tone: 'neutral' },
-  { id: 'scaffold-photo-proof', title: 'Scaffold photo proof', owner: 'Dimas Ardi', location: 'Zone A', status: 'Review', due: 'Ready', tone: 'success' },
-  { id: 'wet-surface-cleanup', title: 'Wet surface cleanup', owner: 'Unassigned', location: 'Zone C', status: 'Open', due: '30m', tone: 'danger' }
+  makeSeedTask('steel-beam-install', 'Steel beam install', 'Core Tower', 'Zone C', 8, 'beams', '2h 15m', 'High', 'Budi Santoso', 'In progress', 'warning'),
+  makeSeedTask('harness-audit', 'Harness audit', 'Core Tower', 'Zone B', 18, 'workers', '45m', 'Medium', 'Dewi Lestari', 'Assigned', 'neutral'),
+  makeSeedTask('scaffold-photo-proof', 'Scaffold photo proof', 'Podium', 'Zone A', 1, 'report', 'Ready', 'Low', 'Dimas Ardi', 'Review', 'success'),
+  makeSeedTask('wet-surface-cleanup', 'Wet surface cleanup', 'Podium', 'Zone C', 120, 'm2', '30m', 'Critical', 'Unassigned', 'Open', 'danger')
 ];
+
+function makeSeedTask(
+  id: string,
+  template: string,
+  project: string,
+  zone: string,
+  quantity: number,
+  unit: string,
+  deadline: string,
+  priority: string,
+  owner: string,
+  status: string,
+  tone: Tone
+): Task {
+  return {
+    id,
+    title: template,
+    owner,
+    location: zone,
+    taskTemplate: template,
+    project,
+    zone,
+    quantity,
+    unit,
+    deadline,
+    priority,
+    notes: '',
+    schedulerRecommendation: makeSeedSchedulerRecommendation(priority),
+    status,
+    due: deadline,
+    tone
+  };
+}
+
+function makeSeedSchedulerRecommendation(priority: string): SchedulerRecommendation {
+  const urgent = priority === 'High' || priority === 'Critical';
+
+  return {
+    recommendedWorkerCount: urgent ? 3 : 2,
+    estimatedTaskDuration: urgent ? '2h 30m' : '1h 30m',
+    recommendedStartTime: 'Next available safe window',
+    estimatedCompletionTime: urgent ? 'Before current shift end' : 'Same day',
+    selectedWorkerRecommendations: [
+      {
+        workerId: 'budi',
+        workerName: 'Budi Santoso',
+        explanation: 'Strong task match and currently assigned near the work zone.'
+      }
+    ],
+    expectedProductivityRate: urgent ? 'High with 3-worker crew' : 'Standard crew output',
+    deadlineFeasibilityStatus: urgent ? 'Feasible with safety review' : 'Feasible',
+    requiredPpeAndCertifications: ['Helmet', 'Safety shoes', 'Harness if working at height'],
+    dependencyStatus: 'No blocking dependency in placeholder scheduler',
+    currentEnvironmentalConditions: 'Uses latest IoT/manual site state when scheduler is deployed',
+    safetyAndOperationalWarnings: urgent ? ['Supervisor confirmation required before start'] : ['Standard toolbox check required'],
+    schedulerStatus: 'Placeholder: rule-based scheduler, OR-Tools assignment, IoT Risk Engine, and optional Chronos-2 forecasting are not deployed yet.'
+  };
+}
 
 export const notifications: Notification[] = [
   {

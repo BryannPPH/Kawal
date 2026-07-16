@@ -14,12 +14,14 @@ export function TaskPanel({ tasks }: { tasks: Task[] }) {
           <div key={task.id} className="rounded-lg border border-[#F3D7C8] p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.title}</p>
-                <p className="mt-1 text-xs text-[#776B63]">{task.owner}</p>
+                <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.taskTemplate}</p>
+                <p className="mt-1 text-xs text-[#776B63]">{task.project} / {task.zone}</p>
               </div>
-              <Pill className={toneStyles[task.tone]}>{task.status}</Pill>
+              <Pill className={toneStyles[task.tone]}>{task.priority || task.status}</Pill>
             </div>
-            <p className="mt-3 text-xs font-medium text-[#776B63]">Due {task.due}</p>
+            <p className="mt-3 text-xs font-medium text-[#776B63]">
+              {task.quantity} {task.unit} / deadline {task.deadline}
+            </p>
           </div>
         ))}
       </div>

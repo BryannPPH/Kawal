@@ -49,6 +49,7 @@ bun run test
 - `POST /api/auth/login`
 - `GET /api/workers`
 - `GET /api/tasks`
+- `POST /api/tasks` with task template, project, zone, quantity, unit, deadline, priority, notes
 - `GET /api/notifications`
 - `PATCH /api/notifications/:id/read`
 - `GET /api/iot/overview`

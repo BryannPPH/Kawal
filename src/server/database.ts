@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { notifications, tasks, workers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
-import type { Notification, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
+import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
 
 const databasePath = join(process.cwd(), 'data', 'garudie.sqlite');
 
@@ -103,6 +103,15 @@ function createTables() {
       title TEXT NOT NULL,
       owner TEXT NOT NULL,
       location TEXT NOT NULL DEFAULT '',
+      task_template TEXT NOT NULL DEFAULT '',
+      project TEXT NOT NULL DEFAULT '',
+      zone TEXT NOT NULL DEFAULT '',
+      quantity REAL NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT '',
+      deadline TEXT NOT NULL DEFAULT '',
+      priority TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      scheduler_recommendation TEXT NOT NULL DEFAULT '{}',
       status TEXT NOT NULL,
       due TEXT NOT NULL,
       tone TEXT NOT NULL
@@ -307,6 +316,15 @@ function createTables() {
   `);
 
   addColumnIfMissing('tasks', 'location', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'task_template', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'project', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'zone', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'quantity', 'REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing('tasks', 'unit', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'deadline', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'priority', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'notes', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'scheduler_recommendation', "TEXT NOT NULL DEFAULT '{}'");
 }
 
 function seedDatabase() {
@@ -374,9 +392,11 @@ function seedWorkers() {
 function seedTasks() {
   const insertTask = db.prepare(`
     INSERT OR IGNORE INTO tasks (
-      id, title, owner, location, status, due, tone
+      id, title, owner, location, task_template, project, zone, quantity, unit,
+      deadline, priority, notes, scheduler_recommendation, status, due, tone
     ) VALUES (
-      $id, $title, $owner, $location, $status, $due, $tone
+      $id, $title, $owner, $location, $taskTemplate, $project, $zone, $quantity, $unit,
+      $deadline, $priority, $notes, $schedulerRecommendation, $status, $due, $tone
     )
   `);
 
@@ -387,6 +407,15 @@ function seedTasks() {
         $title: task.title,
         $owner: task.owner,
         $location: task.location,
+        $taskTemplate: task.taskTemplate,
+        $project: task.project,
+        $zone: task.zone,
+        $quantity: task.quantity,
+        $unit: task.unit,
+        $deadline: task.deadline,
+        $priority: task.priority,
+        $notes: task.notes,
+        $schedulerRecommendation: JSON.stringify(task.schedulerRecommendation),
         $status: task.status,
         $due: task.due,
         $tone: task.tone
@@ -461,8 +490,10 @@ type WorkerRow = Omit<Worker, 'status'> & {
   status: WorkerStatus;
 };
 
-type TaskRow = Omit<Task, 'tone'> & {
+type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'schedulerRecommendation'> & {
   tone: Tone;
+  task_template: string;
+  scheduler_recommendation: string;
 };
 
 type NotificationRow = {
@@ -504,31 +535,62 @@ export function getWorkers(): Worker[] {
 }
 
 export function getTasks(): Task[] {
-  return db.query<TaskRow, []>('SELECT * FROM tasks ORDER BY rowid').all();
+  return db.query<TaskRow, []>('SELECT * FROM tasks ORDER BY rowid').all().map(mapTask);
 }
 
-export function createTask(input: { title: string; owner?: string; location: string; due?: string }): Task {
+export function createTask(input: {
+  taskTemplate: string;
+  project: string;
+  zone: string;
+  quantity: number;
+  unit: string;
+  deadline: string;
+  priority: string;
+  notes?: string;
+  owner?: string;
+}): Task {
+  const schedulerRecommendation = makeSchedulerPlaceholder(input, getWorkers());
   const task: Task = {
-    id: slugify(`${input.title}-${Date.now()}`),
-    title: input.title.trim(),
+    id: slugify(`${input.taskTemplate}-${Date.now()}`),
+    title: input.taskTemplate.trim(),
     owner: input.owner?.trim() || 'Unassigned',
-    location: input.location.trim(),
+    location: input.zone.trim(),
+    taskTemplate: input.taskTemplate.trim(),
+    project: input.project.trim(),
+    zone: input.zone.trim(),
+    quantity: input.quantity,
+    unit: input.unit.trim(),
+    deadline: input.deadline.trim(),
+    priority: input.priority,
+    notes: input.notes?.trim() ?? '',
+    schedulerRecommendation,
     status: 'Open',
-    due: input.due?.trim() || 'Today',
-    tone: 'neutral'
+    due: input.deadline.trim(),
+    tone: input.priority === 'Critical' ? 'danger' : input.priority === 'High' ? 'warning' : 'neutral'
   };
 
   db.prepare(`
     INSERT INTO tasks (
-      id, title, owner, location, status, due, tone
+      id, title, owner, location, task_template, project, zone, quantity, unit,
+      deadline, priority, notes, scheduler_recommendation, status, due, tone
     ) VALUES (
-      $id, $title, $owner, $location, $status, $due, $tone
+      $id, $title, $owner, $location, $taskTemplate, $project, $zone, $quantity, $unit,
+      $deadline, $priority, $notes, $schedulerRecommendation, $status, $due, $tone
     )
   `).run({
     $id: task.id,
     $title: task.title,
     $owner: task.owner,
     $location: task.location,
+    $taskTemplate: task.taskTemplate,
+    $project: task.project,
+    $zone: task.zone,
+    $quantity: task.quantity,
+    $unit: task.unit,
+    $deadline: task.deadline,
+    $priority: task.priority,
+    $notes: task.notes,
+    $schedulerRecommendation: JSON.stringify(task.schedulerRecommendation),
     $status: task.status,
     $due: task.due,
     $tone: task.tone
@@ -571,6 +633,93 @@ function mapNotification(row: NotificationRow): Notification {
 
 function hashPassword(password: string) {
   return new Bun.CryptoHasher('sha256').update(`garudie:${password}`).digest('hex');
+}
+
+function mapTask(row: TaskRow): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    owner: row.owner,
+    location: row.location || row.zone,
+    taskTemplate: row.task_template || row.title,
+    project: row.project,
+    zone: row.zone || row.location,
+    quantity: row.quantity,
+    unit: row.unit,
+    deadline: row.deadline || row.due,
+    priority: row.priority,
+    notes: row.notes,
+    schedulerRecommendation: parseSchedulerRecommendation(row.scheduler_recommendation),
+    status: row.status,
+    due: row.due,
+    tone: row.tone
+  };
+}
+
+function makeSchedulerPlaceholder(input: {
+  taskTemplate: string;
+  project: string;
+  zone: string;
+  quantity: number;
+  unit: string;
+  deadline: string;
+  priority: string;
+}, availableWorkers: Worker[]): SchedulerRecommendation {
+  const urgent = input.priority === 'High' || input.priority === 'Critical';
+  const workerCount = Math.max(1, Math.min(availableWorkers.length || 1, Math.ceil(input.quantity / (urgent ? 40 : 60))));
+  const candidateWorkers = availableWorkers
+    .slice()
+    .sort((left, right) => right.match - left.match)
+    .slice(0, workerCount)
+    .map((worker) => ({
+      workerId: worker.id,
+      workerName: worker.name,
+      explanation: `${worker.role} has ${worker.match}% match and current fatigue score ${worker.fatigue}; placeholder scheduler ranks by match until OR-Tools is deployed.`
+    }));
+
+  return {
+    recommendedWorkerCount: workerCount,
+    estimatedTaskDuration: urgent ? '2-4 hours placeholder estimate' : '1-3 hours placeholder estimate',
+    recommendedStartTime: urgent ? 'Next safe available window' : 'Next normal scheduling window',
+    estimatedCompletionTime: input.deadline,
+    selectedWorkerRecommendations: candidateWorkers,
+    expectedProductivityRate: `${Math.max(1, Math.round(input.quantity / Math.max(workerCount, 1)))} ${input.unit} per worker placeholder`,
+    deadlineFeasibilityStatus: urgent ? 'Needs supervisor confirmation' : 'Likely feasible under placeholder rules',
+    requiredPpeAndCertifications: ['Helmet', 'Safety shoes', 'High-vis vest', urgent ? 'Supervisor safety sign-off' : 'Standard toolbox briefing'],
+    dependencyStatus: 'Placeholder assumes dependencies are clear; future scheduler will check task graph.',
+    currentEnvironmentalConditions: 'Placeholder reads latest environment/risk service when scheduler integration is deployed.',
+    safetyAndOperationalWarnings: urgent
+      ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.']
+      : ['Confirm zone access before dispatch.'],
+    schedulerStatus: 'Placeholder only: future architecture is rule-based crew sizing, OR-Tools or rule-engine worker assignment, IoT Risk Engine safety interventions, and optional Chronos-2 forecasting from historical productivity.'
+  };
+}
+
+function parseSchedulerRecommendation(value: string): SchedulerRecommendation {
+  try {
+    const parsed = JSON.parse(value) as SchedulerRecommendation;
+
+    if (parsed && typeof parsed.schedulerStatus === 'string') {
+      return parsed;
+    }
+  } catch {
+    // Fall through to default placeholder.
+  }
+
+  return {
+    recommendedWorkerCount: 1,
+    estimatedTaskDuration: 'Pending placeholder estimate',
+    recommendedStartTime: 'Pending',
+    estimatedCompletionTime: 'Pending',
+    selectedWorkerRecommendations: [],
+    expectedProductivityRate: 'Pending',
+    deadlineFeasibilityStatus: 'Pending',
+    requiredPpeAndCertifications: [],
+    dependencyStatus: 'Pending',
+    currentEnvironmentalConditions: 'Pending',
+    safetyAndOperationalWarnings: [],
+    schedulerStatus: 'Placeholder scheduler result unavailable for this legacy task.'
+  };
 }
 
 function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
