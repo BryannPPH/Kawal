@@ -7,9 +7,9 @@ import { getLatestPpeCheck, runPpeCheck } from './ppe';
 
 type WorkerActionStatus = Extract<WorkerStatus, 'waiting' | 'working' | 'break' | 'done'>;
 
-export function getWorkerAppData(workerId: string) {
+export async function getWorkerAppData(workerId: string) {
   const worker = getWorkers().find((item) => item.id === workerId) ?? null;
-  const tasks = worker ? getTasks().filter((task) => task.owner === worker.name || task.schedulerRecommendation.selectedWorkerRecommendations.some((candidate) => candidate.workerId === worker.id)) : [];
+  const tasks = worker ? (await getTasks()).filter((task) => task.owner === worker.name) : [];
   const notifications = getNotifications().filter((notification) => notification.targetWorkerId === workerId);
   const activeIncident = db
     .query('SELECT * FROM emergency_incidents WHERE worker_id = ? AND state != ? ORDER BY opened_at DESC LIMIT 1')
@@ -26,7 +26,7 @@ export function getWorkerAppData(workerId: string) {
   };
 }
 
-export function updateWorkerShiftStatus(workerId: string, status: WorkerActionStatus) {
+export async function updateWorkerShiftStatus(workerId: string, status: WorkerActionStatus) {
   if (status === 'working') {
     const latestPpeCheck = getLatestPpeCheck(workerId);
 
@@ -36,12 +36,26 @@ export function updateWorkerShiftStatus(workerId: string, status: WorkerActionSt
   }
 
   db.prepare('UPDATE workers SET status = ? WHERE id = ?').run(status, workerId);
+
+  if (status === 'working') {
+    const worker = getRequiredWorker(workerId);
+    db.prepare("UPDATE tasks SET status = ? WHERE owner = ? AND status NOT IN ('Done', 'Review')").run('In Progress', worker.name);
+    createManagerNotification({
+      title: 'Task started',
+      detail: `${worker.name} started ${worker.task} in ${worker.zone}.`,
+      tone: 'success',
+      targetLabel: 'View task',
+      targetSection: 'tasks',
+      targetWorkerId: worker.id
+    });
+  }
+
   return getWorkerAppData(workerId);
 }
 
 export async function performWorkerPpeCheck(workerId: string, imageDataUrl: string) {
   const worker = getRequiredWorker(workerId);
-  const task = getTasks().find((item) => item.owner === worker.name || item.schedulerRecommendation.selectedWorkerRecommendations.some((candidate) => candidate.workerId === worker.id));
+  const task = (await getTasks()).find((item) => item.owner === worker.name);
   const check = await runPpeCheck({
     workerId,
     taskId: task?.id ?? null,
@@ -69,14 +83,14 @@ export async function performWorkerPpeCheck(workerId: string, imageDataUrl: stri
   }
 
   return {
-    ...getWorkerAppData(workerId),
+    ...await getWorkerAppData(workerId),
     ppeCheck: check
   };
 }
 
-export function completeWorkerAssignment(workerId: string) {
+export async function completeWorkerAssignment(workerId: string) {
   const worker = getRequiredWorker(workerId);
-  const activeTasks = getTasks().filter((task) => task.owner === worker.name && !['Done', 'Review'].includes(task.status));
+  const activeTasks = (await getTasks()).filter((task) => task.owner === worker.name && !['Done', 'Review'].includes(task.status));
 
   db.prepare('UPDATE workers SET status = ?, time = ? WHERE id = ?').run('done', worker.time, workerId);
 
@@ -96,7 +110,7 @@ export function completeWorkerAssignment(workerId: string) {
   return getWorkerAppData(workerId);
 }
 
-export function reportWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
+export async function reportWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
   const worker = getRequiredWorker(workerId);
   const hazardType = input.hazardType?.trim() || 'Hazard';
   const note = input.note?.trim();
@@ -113,7 +127,7 @@ export function reportWorkerHazard(workerId: string, input: { hazardType?: strin
   return getWorkerAppData(workerId);
 }
 
-export function requestWorkerRest(workerId: string) {
+export async function requestWorkerRest(workerId: string) {
   const worker = getRequiredWorker(workerId);
   const device = getAssignedDevice(workerId);
 
@@ -127,7 +141,7 @@ export function requestWorkerRest(workerId: string) {
       targetSection: 'workers',
       targetWorkerId: worker.id
     });
-    return { ...getWorkerAppData(workerId), action: { ok: true, fallback: true } };
+    return { ...await getWorkerAppData(workerId), action: { ok: true, fallback: true } };
   }
 
   const result = processIoTMessage(
@@ -139,10 +153,10 @@ export function requestWorkerRest(workerId: string) {
     }))
   );
 
-  return { ...getWorkerAppData(workerId), action: result };
+  return { ...await getWorkerAppData(workerId), action: result };
 }
 
-export function triggerWorkerSos(workerId: string) {
+export async function triggerWorkerSos(workerId: string) {
   const worker = getRequiredWorker(workerId);
   const device = getAssignedDevice(workerId);
 
@@ -166,7 +180,7 @@ export function triggerWorkerSos(workerId: string) {
       targetWorkerId: worker.id
     });
 
-    return { ...getWorkerAppData(workerId), action: { ok: true, fallback: true, incidentId } };
+    return { ...await getWorkerAppData(workerId), action: { ok: true, fallback: true, incidentId } };
   }
 
   const result = processIoTMessage(
@@ -177,10 +191,10 @@ export function triggerWorkerSos(workerId: string) {
     }))
   );
 
-  return { ...getWorkerAppData(workerId), action: result };
+  return { ...await getWorkerAppData(workerId), action: result };
 }
 
-export function readWorkerNotification(workerId: string, notificationId: string) {
+export async function readWorkerNotification(workerId: string, notificationId: string) {
   markNotificationRead(notificationId);
   return getWorkerAppData(workerId);
 }

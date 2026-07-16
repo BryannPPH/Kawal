@@ -683,9 +683,22 @@ export async function autoAssignTask(taskId: string): Promise<Task | null> {
   db.transaction(() => {
     db.prepare('UPDATE tasks SET owner = ?, status = ? WHERE id = ?').run(bestWorker.workerName, 'Assigned', taskId);
     db.prepare('UPDATE workers SET task = ?, status = ?, zone = ?, workload = ? WHERE id = ?')
-      .run(task.title, 'working', task.zone, task.workload, bestWorker.workerId);
+      .run(task.title, 'waiting', task.zone, task.workload, bestWorker.workerId);
     db.prepare('UPDATE iot_devices SET assigned_task_id = ?, assigned_zone_id = ?, updated_at = ? WHERE assigned_worker_id = ?')
       .run(taskId, task.zone, new Date().toISOString(), bestWorker.workerId);
+    db.prepare(`
+      INSERT INTO notifications (
+        id, title, detail, tone, target_label, target_section, target_worker_id, read
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(
+      `task-assigned-${crypto.randomUUID()}`,
+      'New task assigned',
+      `${task.title} was assigned in ${task.zone}. Complete PPE verification before starting.`,
+      'neutral',
+      'Open task',
+      'tasks',
+      bestWorker.workerId
+    );
   })();
 
   const updatedRow = db.query<TaskRow, [string]>('SELECT * FROM tasks WHERE id = ?').get(taskId);

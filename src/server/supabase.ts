@@ -122,7 +122,7 @@ export async function autoAssignSupabaseTask(taskId: string): Promise<Task | nul
     patchRows<SupabaseTaskRow>('tasks', `id=eq.${encodeFilterValue(taskId)}`, { owner: bestWorker.workerName, status: 'Assigned' }),
     patchRows('workers', `id=eq.${encodeFilterValue(bestWorker.workerId)}`, {
       task: task.title,
-      status: 'working',
+      status: 'waiting',
       zone: task.zone,
       workload: task.workload
     }),
@@ -132,6 +132,15 @@ export async function autoAssignSupabaseTask(taskId: string): Promise<Task | nul
       updated_at: new Date().toISOString()
     })
   ]);
+
+  await createSupabaseNotification({
+    title: 'New task assigned',
+    detail: `${task.title} was assigned in ${task.zone}. Complete PPE verification before starting.`,
+    tone: 'neutral',
+    targetLabel: 'Open task',
+    targetSection: 'tasks',
+    targetWorkerId: bestWorker.workerId
+  });
 
   return updatedRows[0] ? mapTask(updatedRows[0]) : null;
 }
@@ -227,6 +236,23 @@ export async function getSupabaseWorkerAppData(workerId: string) {
 
 export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 'waiting' | 'working' | 'break' | 'done') {
   await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status });
+
+  if (status === 'working') {
+    const data = await getSupabaseWorkerAppData(workerId);
+
+    if (data.worker) {
+      await patchRows('tasks', `owner=eq.${encodeFilterValue(data.worker.name)}&status=neq.Review`, { status: 'In Progress' });
+      await createSupabaseNotification({
+        title: 'Task started',
+        detail: `${data.worker.name} started ${data.worker.task} in ${data.worker.zone}.`,
+        tone: 'success',
+        targetLabel: 'View task',
+        targetSection: 'tasks',
+        targetWorkerId: workerId
+      });
+    }
+  }
+
   return getSupabaseWorkerAppData(workerId);
 }
 

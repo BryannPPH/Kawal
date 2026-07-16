@@ -1,4 +1,5 @@
-import { autoAssignTask, createTask, db, getTasks, initializeDatabase } from '../src/server/database';
+import { autoAssignTask, createTask, db, getTasks, getWorkers, initializeDatabase } from '../src/server/database';
+import { getWorkerAppData } from '../src/server/workerActions';
 
 initializeDatabase();
 db.exec('BEGIN');
@@ -23,6 +24,18 @@ try {
 
   if (!assignedTask || assignedTask.owner === 'Unassigned' || assignedTask.status !== 'Assigned') {
     throw new Error('Automatic assignment did not update the task');
+  }
+
+  const assignedWorker = getWorkers().find((worker) => worker.name === assignedTask.owner);
+
+  if (!assignedWorker || assignedWorker.status !== 'waiting') {
+    throw new Error('Assigned worker was not moved to the waiting-for-start state');
+  }
+
+  const workerApp = await getWorkerAppData(assignedWorker.id);
+
+  if (!workerApp.tasks.some((assignedWorkerTask) => assignedWorkerTask.id === task.id)) {
+    throw new Error('Assigned task is not visible in the worker app');
   }
 
   console.log(`Task workflow passed: ${task.id} assigned to ${assignedTask.owner}`);
