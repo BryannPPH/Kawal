@@ -1,6 +1,6 @@
-# Garudie Workforce
+# Kawal
 
-React + TypeScript dashboard with a Bun API backend and SQLite database for workforce assignment, task tracking, notifications, and payroll review.
+React + TypeScript dashboard with a Bun API backend and SQLite or Supabase data source for workforce assignment, task tracking, notifications, IoT safety telemetry, and payroll review.
 
 ## Stack
 
@@ -8,6 +8,7 @@ React + TypeScript dashboard with a Bun API backend and SQLite database for work
 - Tailwind CSS
 - Bun API server
 - SQLite via `bun:sqlite`
+- Optional Supabase REST data source
 - Lucide React icons
 - Vitest
 
@@ -17,10 +18,47 @@ React + TypeScript dashboard with a Bun API backend and SQLite database for work
 React dashboard
   -> Vite /api proxy
   -> Bun API
-  -> SQLite database at data/garudie.sqlite
+  -> SQLite database at data/garudie.sqlite or Supabase REST
 ```
 
-The database is initialized and seeded automatically when the API starts.
+SQLite is initialized and seeded automatically when the API starts. Supabase is enabled with `DATA_SOURCE=supabase`.
+
+## Supabase Setup
+
+1. Create a Supabase project.
+2. Open the Supabase SQL editor.
+3. Run `docs/supabase-schema.sql`.
+4. Run `docs/supabase-seed.sql`.
+5. Copy `.env.example` to `.env` and set:
+
+```env
+DATA_SOURCE=supabase
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SCHEMA=public
+```
+
+The React app still calls the Bun API. The Bun API fetches dashboard data from Supabase when `DATA_SOURCE=supabase`.
+
+## PPE Computer Vision
+
+Worker `Start Task` opens the camera first. The captured frame is sent to `POST /api/workers/:workerId/ppe-check`.
+
+Local demo mode:
+
+```env
+PPE_CHECK_PROVIDER=demo
+```
+
+OpenAI vision mode:
+
+```env
+PPE_CHECK_PROVIDER=openai
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_PPE_MODEL=gpt-5
+```
+
+The backend asks the vision model to return helmet and harness detection as JSON, stores the result in `ppe_checks`, and only allows task start when the latest PPE check is `PASSED`.
 
 ## Demo Login
 

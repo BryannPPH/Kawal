@@ -5,7 +5,7 @@ resetAndSeedDatabase();
 const summary = {
   users: getUsers().length,
   workers: getWorkers().length,
-  tasks: getTasks().length,
+  tasks: (await getTasks()).length,
   notifications: getNotifications().length
 };
 

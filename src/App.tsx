@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { clearAuthSession, getStoredRole, saveAuthSession } from './lib/authStorage';
+import { clearAuthSession, getStoredRole, getStoredUser, saveAuthSession } from './lib/authStorage';
 import { LoginPage } from './pages/login/LoginPage';
 import { ManagerPage } from './pages/manager/ManagerPage';
 import { WorkerPage } from './pages/worker/WorkerPage';
@@ -16,6 +16,7 @@ function getRouteFromPath(): RouteName {
 function App() {
   const [route, setRoute] = useState<RouteName>(getRouteFromPath);
   const [role, setRole] = useState<UserRole | null>(getStoredRole);
+  const [user, setUser] = useState<AuthUser | null>(getStoredUser);
 
   useEffect(() => {
     const handlePopState = () => setRoute(getRouteFromPath());
@@ -57,6 +58,7 @@ function App() {
       }
 
       saveAuthSession(payload.user);
+      setUser(payload.user);
       setRole(payload.user.role);
       navigate(payload.user.role === 'worker' ? 'worker' : 'manager');
       return null;
@@ -67,6 +69,7 @@ function App() {
 
   const logout = () => {
     clearAuthSession();
+    setUser(null);
     setRole(null);
     navigate('login');
   };
@@ -81,7 +84,7 @@ function App() {
 
   return (
     <main className="min-h-screen bg-[#F1F2F7] font-sans text-[#2F2C2A]">
-      {route === 'worker' ? <WorkerPage onLogout={logout} /> : <ManagerPage onLogout={logout} />}
+      {route === 'worker' ? <WorkerPage user={user} onLogout={logout} /> : <ManagerPage onLogout={logout} />}
     </main>
   );
 }

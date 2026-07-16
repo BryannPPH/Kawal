@@ -1,5 +1,5 @@
 import { Bell, Search, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { getManagerSectionFromPath, managerSectionMeta, managerSections } from '../../constants/managerNavigation';
@@ -17,11 +17,24 @@ type ManagerPageProps = {
   onLogout: () => void;
 };
 
+type SearchResult = {
+  id: string;
+  type: 'page' | 'worker' | 'task' | 'zone' | 'alert';
+  title: string;
+  detail: string;
+  section: ManagerSection;
+  workerId?: string;
+  notificationId?: string;
+  keywords: string;
+};
+
 export function ManagerPage({ onLogout }: ManagerPageProps) {
   const { workers, tasks, notifications, loading, error, markNotificationRead, createTask } = useWorkforceData();
   const [selectedWorkerId, setSelectedWorkerId] = useState('budi');
   const [activeSection, setActiveSection] = useState<ManagerSection>(() => getManagerSectionFromPath(window.location.pathname));
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [taskTemplate, setTaskTemplate] = useState('');
   const [taskProject, setTaskProject] = useState('');
@@ -39,6 +52,71 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const activeMeta = managerSectionMeta[activeSection];
   const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId) ?? workers[0];
   const unreadNotifications = notifications.filter((notification) => !notification.read);
+  const searchResults = useMemo(() => {
+    const trimmedQuery = searchQuery.trim().toLowerCase();
+
+    if (!trimmedQuery) {
+      return [];
+    }
+
+    const zoneResults = Array.from(new Set([...workers.map((worker) => worker.zone), ...tasks.map((task) => task.zone)].filter(Boolean)))
+      .map((zone) => {
+        const workerCount = workers.filter((worker) => worker.zone === zone).length;
+        const taskCount = tasks.filter((task) => task.zone === zone).length;
+        return {
+          id: `zone-${zone}`,
+          type: 'zone',
+          title: zone,
+          detail: `${workerCount} workers / ${taskCount} tasks`,
+          section: 'workers',
+          workerId: workers.find((worker) => worker.zone === zone)?.id,
+          keywords: [zone, 'zone', 'location', `${workerCount} workers`, `${taskCount} tasks`].join(' ')
+        } satisfies SearchResult;
+      });
+
+    const results: SearchResult[] = [
+      ...managerSections.map(({ section, title, label }) => ({
+        id: `page-${section}`,
+        type: 'page' as const,
+        title,
+        detail: `Open ${label}`,
+        section,
+        keywords: [title, label, section].join(' ')
+      })),
+      ...workers.map((worker) => ({
+        id: `worker-${worker.id}`,
+        type: 'worker' as const,
+        title: worker.name,
+        detail: `${worker.role} / ${worker.zone} / ${worker.status}`,
+        section: 'workers' as const,
+        workerId: worker.id,
+        keywords: [worker.name, worker.role, worker.task, worker.zone, worker.status, worker.workload].join(' ')
+      })),
+      ...tasks.map((task) => ({
+        id: `task-${task.id}`,
+        type: 'task' as const,
+        title: task.title,
+        detail: `${task.project} / ${task.zone} / ${task.status}`,
+        section: 'tasks' as const,
+        keywords: [task.title, task.owner, task.project, task.zone, task.priority, task.status, task.notes].join(' ')
+      })),
+      ...zoneResults,
+      ...notifications.map((notification) => ({
+        id: `alert-${notification.id}`,
+        type: 'alert' as const,
+        title: notification.title,
+        detail: notification.detail,
+        section: notification.targetSection,
+        workerId: notification.targetWorkerId,
+        notificationId: notification.id,
+        keywords: [notification.title, notification.detail, notification.targetLabel, notification.targetSection].join(' ')
+      }))
+    ];
+
+    return results
+      .filter((result) => `${result.title} ${result.detail} ${result.keywords}`.toLowerCase().includes(trimmedQuery))
+      .slice(0, 8);
+  }, [notifications, searchQuery, tasks, workers]);
 
   useEffect(() => {
     const handlePopState = () => setActiveSection(getManagerSectionFromPath(window.location.pathname));
@@ -103,6 +181,33 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     selectSection(notification.targetSection);
   };
 
+  const openSearchResult = (result: SearchResult) => {
+    if (result.workerId) {
+      setSelectedWorkerId(result.workerId);
+    }
+
+    if (result.notificationId) {
+      const notification = notifications.find((item) => item.id === result.notificationId);
+
+      if (notification) {
+        openNotificationTarget(notification);
+      }
+    } else {
+      selectSection(result.section);
+    }
+
+    setSearchQuery('');
+    setSearchOpen(false);
+  };
+
+  const submitSearch = () => {
+    const [firstResult] = searchResults;
+
+    if (firstResult) {
+      openSearchResult(firstResult);
+    }
+  };
+
   const renderSection = () => {
     if (activeSection === 'workers') {
       return <WorkersView workers={workers} selectedWorker={selectedWorker} onSelectWorker={(worker) => setSelectedWorkerId(worker.id)} />;
@@ -141,11 +246,78 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
       <section className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 border-b border-[#F3D7C8] bg-white/95 px-5 py-4 backdrop-blur sm:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex h-10 max-w-xl items-center rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#A09188]">
-              <Search size={16} />
-              <span className="ml-2 text-sm">Search workers, tasks, zones</span>
+            <div className="relative w-full lg:max-w-3xl xl:max-w-4xl">
+              <div className="flex h-11 items-center rounded-lg border border-[#F3D7C8] bg-[#FFF8F4] px-3 text-[#A09188] transition focus-within:border-[#FD7124] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#FFEFE6]">
+                <Search size={17} />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setSearchOpen(true);
+                  }}
+                  onFocus={() => setSearchOpen(true)}
+                  onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      submitSearch();
+                    }
+
+                    if (event.key === 'Escape') {
+                      setSearchQuery('');
+                      setSearchOpen(false);
+                    }
+                  }}
+                  className="ml-2 h-full min-w-0 flex-1 bg-transparent text-sm font-medium text-[#2F2C2A] outline-none placeholder:text-[#A09188]"
+                  placeholder="Search workers, tasks, zones, alerts"
+                  type="search"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    title="Clear search"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchOpen(false);
+                    }}
+                    className="grid h-7 w-7 place-items-center rounded-md text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
+                  >
+                    <X size={15} />
+                  </button>
+                ) : null}
+              </div>
+
+              {searchOpen && searchQuery.trim() ? (
+                <div className="absolute left-0 right-0 top-12 z-30 rounded-lg border border-[#F3D7C8] bg-white p-2 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
+                  {searchResults.length ? (
+                    <div className="max-h-[360px] overflow-y-auto">
+                      {searchResults.map((result) => (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => openSearchResult(result)}
+                          className="group grid w-full gap-1 rounded-md px-3 py-3 text-left transition hover:bg-[#FFEFE6]"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="min-w-0 truncate text-sm font-semibold text-[#2F2C2A]">{result.title}</p>
+                            <span className="shrink-0 rounded bg-[#FFF8F4] px-2 py-1 text-[11px] font-semibold capitalize text-[#776B63] group-hover:bg-white">
+                              {result.type}
+                            </span>
+                          </div>
+                          <p className="truncate text-xs text-[#776B63]">{result.detail}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-3 py-4 text-sm text-[#776B63]">No results found.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <div className="relative">
                 <button
                   type="button"
@@ -170,7 +342,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                     <div className="space-y-2">
                       {notifications.map((item) => (
                         <button
-                          key={item.title}
+                          key={item.id}
                           type="button"
                           onClick={() => openNotificationTarget(item)}
                           className={`group w-full rounded-md border border-[#F3D7C8] p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6] ${

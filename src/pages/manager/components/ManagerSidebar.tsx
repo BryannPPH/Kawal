@@ -1,4 +1,5 @@
-import { HardHat, TimerReset } from 'lucide-react';
+import { TimerReset } from 'lucide-react';
+import kawalLogo from '../../../assets/kawal-logo.svg';
 import { managerSections } from '../../../constants/managerNavigation';
 import type { ManagerSection } from '../../../types/navigation';
 
@@ -14,12 +15,11 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
     <aside className="hidden w-[248px] shrink-0 border-r border-[#F3D7C8] bg-white px-5 py-6 lg:flex lg:flex-col">
       <div>
         <div className="mb-10 flex items-center gap-3">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#FD7124] text-white">
-            <HardHat size={17} />
+          <span className="grid h-10 w-10 place-items-center">
+            <img src={kawalLogo} alt="Kawal logo" className="h-10 w-10 object-contain" />
           </span>
           <div>
-            <p className="text-sm font-bold text-[#2F2C2A]">GARUDIE</p>
-            <p className="text-xs text-[#776B63]">Workforce OS</p>
+            <p className="text-2xl font-bold leading-none text-[#2F2C2A]">Kawal</p>
           </div>
         </div>
 

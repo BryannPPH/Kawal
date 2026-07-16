@@ -43,9 +43,11 @@ export function useWorkforceData() {
     }
 
     loadWorkforceData();
+    const timer = window.setInterval(loadWorkforceData, 5000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 

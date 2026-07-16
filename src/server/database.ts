@@ -61,6 +61,7 @@ export function resetAndSeedDatabase() {
   db.exec(`
     DELETE FROM data_collection_status;
     DELETE FROM fatigue_evaluations;
+    DELETE FROM ppe_checks;
     DELETE FROM risk_evaluations;
     DELETE FROM emergency_incidents;
     DELETE FROM break_sessions;
@@ -134,6 +135,19 @@ function createTables() {
       target_section TEXT NOT NULL,
       target_worker_id TEXT,
       read INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS ppe_checks (
+      id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      task_id TEXT,
+      helmet_detected INTEGER NOT NULL,
+      harness_detected INTEGER NOT NULL,
+      confidence REAL NOT NULL,
+      status TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      checked_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS iot_devices (

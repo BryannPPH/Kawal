@@ -33,10 +33,49 @@ import {
   updateSiteConditions
 } from './iot';
 import { recommendWorkers } from './workerAssignmentEngine';
+import {
+  assertSupabaseConfigured,
+  authenticateSupabaseUser,
+  createSupabaseTask,
+  getDataSourceName,
+  getSupabaseIncidentCenter,
+  getSupabaseIoTOverview,
+  getSupabaseNotifications,
+  getSupabaseTasks,
+  getSupabaseUsers,
+  getSupabaseWorkerAppData,
+  getSupabaseWorkers,
+  getSupabaseWorkforceData,
+  ingestSupabaseIoTMessage,
+  listSupabaseDevices,
+  markSupabaseNotificationRead,
+  completeSupabaseWorkerAssignment,
+  reportSupabaseWorkerHazard,
+  requestSupabaseWorkerRest,
+  shouldUseSupabase,
+  triggerSupabaseWorkerSos,
+  updateSupabaseWorkerShiftStatus,
+  updateSupabaseIncidentState
+} from './supabase';
+import {
+  completeWorkerAssignment,
+  getWorkerAppData,
+  performWorkerPpeCheck,
+  readWorkerNotification,
+  reportWorkerHazard,
+  requestWorkerRest,
+  triggerWorkerSos,
+  updateWorkerShiftStatus
+} from './workerActions';
 
 const port = Number(process.env.API_PORT ?? 3001);
+const useSupabase = shouldUseSupabase();
 
 initializeDatabase();
+
+if (useSupabase) {
+  assertSupabaseConfigured();
+}
 
 const jsonHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -69,15 +108,15 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/health') {
-      return jsonResponse({ ok: true, database: 'sqlite', service: 'garudie-api' });
+      return jsonResponse({ ok: true, database: getDataSourceName(), service: 'garudie-api' });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/workforce') {
-      return jsonResponse(await getWorkforceData());
+      return jsonResponse(useSupabase ? await getSupabaseWorkforceData() : await getWorkforceData());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/iot/overview') {
-      return jsonResponse(getIoTOverview());
+      return jsonResponse(useSupabase ? await getSupabaseIoTOverview() : getIoTOverview());
     }
 
     if (request.method === 'POST' && url.pathname === '/api/auth/login') {
@@ -88,7 +127,9 @@ const server = Bun.serve({
           return jsonResponse({ error: 'Email and password are required' }, { status: 400 });
         }
 
-        const user = authenticateUser(body.email, body.password);
+        const user = useSupabase
+          ? await authenticateSupabaseUser(body.email, body.password)
+          : authenticateUser(body.email, body.password);
 
         if (!user) {
           return jsonResponse({ error: 'Invalid email or password' }, { status: 401 });
@@ -101,15 +142,97 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/users') {
-      return jsonResponse(getUsers());
+      return jsonResponse(useSupabase ? await getSupabaseUsers() : getUsers());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/workers') {
-      return jsonResponse(getWorkers());
+      return jsonResponse(useSupabase ? await getSupabaseWorkers() : getWorkers());
+    }
+
+    const workerAppMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/app$/);
+
+    if (request.method === 'GET' && workerAppMatch) {
+      return jsonResponse(useSupabase ? await getSupabaseWorkerAppData(workerAppMatch[1]) : getWorkerAppData(workerAppMatch[1]));
+    }
+
+    const workerStatusMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/status$/);
+
+    if (request.method === 'POST' && workerStatusMatch) {
+      const body = await readJsonBody<{ status?: 'waiting' | 'working' | 'break' | 'done' }>(request);
+
+      if (!body.status || !['waiting', 'working', 'break', 'done'].includes(body.status)) {
+        return jsonResponse({ error: 'Valid status is required' }, { status: 400 });
+      }
+
+      return jsonResponse(useSupabase
+        ? await updateSupabaseWorkerShiftStatus(workerStatusMatch[1], body.status)
+        : updateWorkerShiftStatus(workerStatusMatch[1], body.status));
+    }
+
+    const workerPpeCheckMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/ppe-check$/);
+
+    if (request.method === 'POST' && workerPpeCheckMatch) {
+      const body = await readJsonBody<{ imageDataUrl?: string }>(request);
+
+      if (!body.imageDataUrl) {
+        return jsonResponse({ error: 'Camera image is required' }, { status: 400 });
+      }
+
+      if (useSupabase) {
+        return jsonResponse({ error: 'PPE check is currently wired to the local database mode' }, { status: 501 });
+      }
+
+      return jsonResponse(await performWorkerPpeCheck(workerPpeCheckMatch[1], body.imageDataUrl), { status: 201 });
+    }
+
+    const workerCompleteMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/complete$/);
+
+    if (request.method === 'POST' && workerCompleteMatch) {
+      return jsonResponse(useSupabase
+        ? await completeSupabaseWorkerAssignment(workerCompleteMatch[1])
+        : completeWorkerAssignment(workerCompleteMatch[1]));
+    }
+
+    const workerHazardMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/hazards$/);
+
+    if (request.method === 'POST' && workerHazardMatch) {
+      const body = await readJsonBody<{ hazardType?: string; note?: string }>(request);
+
+      if (!body.hazardType?.trim()) {
+        return jsonResponse({ error: 'Hazard type is required' }, { status: 400 });
+      }
+
+      return jsonResponse(useSupabase
+        ? await reportSupabaseWorkerHazard(workerHazardMatch[1], body)
+        : reportWorkerHazard(workerHazardMatch[1], body));
+    }
+
+    const workerRestRequestMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/rest-request$/);
+
+    if (request.method === 'POST' && workerRestRequestMatch) {
+      return jsonResponse(useSupabase
+        ? await requestSupabaseWorkerRest(workerRestRequestMatch[1])
+        : requestWorkerRest(workerRestRequestMatch[1]), { status: 202 });
+    }
+
+    const workerSosMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/sos$/);
+
+    if (request.method === 'POST' && workerSosMatch) {
+      return jsonResponse(useSupabase
+        ? await triggerSupabaseWorkerSos(workerSosMatch[1])
+        : triggerWorkerSos(workerSosMatch[1]), { status: 202 });
+    }
+
+    const workerNotificationReadMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/notifications\/([^/]+)\/read$/);
+
+    if (request.method === 'PATCH' && workerNotificationReadMatch) {
+      return jsonResponse(useSupabase
+        ? await markSupabaseNotificationRead(workerNotificationReadMatch[2])
+        : readWorkerNotification(workerNotificationReadMatch[1], workerNotificationReadMatch[2]));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/tasks') {
-      return jsonResponse(await getTasks());
+      return jsonResponse(useSupabase ? await getSupabaseTasks() : await getTasks());
     }
 
     if (request.method === 'POST' && url.pathname === '/api/capacity/estimate') {
@@ -234,7 +357,7 @@ const server = Bun.serve({
         return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, priority, and workload are required' }, { status: 400 });
       }
 
-      return jsonResponse(await createTask({
+      const taskInput = {
         taskTemplate: body.taskTemplate,
         project: body.project,
         zone: body.zone,
@@ -247,15 +370,17 @@ const server = Bun.serve({
         workload: body.workload,
         notes: body.notes,
         owner: body.owner
-      }), { status: 201 });
+      };
+
+      return jsonResponse(useSupabase ? await createSupabaseTask(taskInput) : await createTask(taskInput), { status: 201 });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/notifications') {
-      return jsonResponse(getNotifications());
+      return jsonResponse(useSupabase ? await getSupabaseNotifications() : getNotifications());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/iot/devices') {
-      return jsonResponse(listDevices());
+      return jsonResponse(useSupabase ? await listSupabaseDevices() : listDevices());
     }
 
     const deviceMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)$/);
@@ -397,7 +522,7 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/incidents/center') {
-      return jsonResponse(getIncidentCenter());
+      return jsonResponse(useSupabase ? await getSupabaseIncidentCenter() : getIncidentCenter());
     }
 
     const incidentMatch = url.pathname.match(/^\/api\/incidents\/([^/]+)$/);
@@ -415,7 +540,9 @@ const server = Bun.serve({
     ] as const) {
       const actionMatch = url.pathname.match(new RegExp(`^/api/incidents/([^/]+)/${action}$`));
       if (request.method === 'POST' && actionMatch) {
-        const incident = updateIncidentState(actionMatch[1], state);
+        const incident = useSupabase
+          ? await updateSupabaseIncidentState(actionMatch[1], state)
+          : updateIncidentState(actionMatch[1], state);
         return incident ? jsonResponse(incident) : jsonResponse({ error: 'Incident not found' }, { status: 404 });
       }
     }
@@ -472,7 +599,9 @@ const server = Bun.serve({
         return jsonResponse({ error: 'topic and payload are required' }, { status: 400 });
       }
 
-      const result = processIoTMessage(body.topic, JSON.stringify(body.payload));
+      const result = useSupabase
+        ? await ingestSupabaseIoTMessage(body.topic, JSON.stringify(body.payload))
+        : processIoTMessage(body.topic, JSON.stringify(body.payload));
       return jsonResponse(result, { status: result.ok ? 202 : result.status ?? 400 });
     }
 
@@ -489,7 +618,9 @@ const server = Bun.serve({
     const notificationReadMatch = url.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
 
     if (request.method === 'PATCH' && notificationReadMatch) {
-      const notification = markNotificationRead(notificationReadMatch[1]);
+      const notification = useSupabase
+        ? await markSupabaseNotificationRead(notificationReadMatch[1])
+        : markNotificationRead(notificationReadMatch[1]);
 
       if (!notification) {
         return jsonResponse({ error: 'Notification not found' }, { status: 404 });
@@ -502,7 +633,7 @@ const server = Bun.serve({
   }
 });
 
-console.log(`Garudie API listening on http://${server.hostname}:${server.port}`);
+console.log(`Kawal API listening on http://${server.hostname}:${server.port}`);
 
 async function readJsonBody<T>(request: Request): Promise<T> {
   try {
