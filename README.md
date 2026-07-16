@@ -1,6 +1,6 @@
 # Garudie Workforce
 
-React + TypeScript dashboard with a Bun API backend and SQLite database for workforce assignment, task tracking, notifications, and payroll review.
+React + TypeScript dashboard with a Bun API backend and SQLite or Supabase data source for workforce assignment, task tracking, notifications, IoT safety telemetry, and payroll review.
 
 ## Stack
 
@@ -8,6 +8,7 @@ React + TypeScript dashboard with a Bun API backend and SQLite database for work
 - Tailwind CSS
 - Bun API server
 - SQLite via `bun:sqlite`
+- Optional Supabase REST data source
 - Lucide React icons
 - Vitest
 
@@ -17,10 +18,27 @@ React + TypeScript dashboard with a Bun API backend and SQLite database for work
 React dashboard
   -> Vite /api proxy
   -> Bun API
-  -> SQLite database at data/garudie.sqlite
+  -> SQLite database at data/garudie.sqlite or Supabase REST
 ```
 
-The database is initialized and seeded automatically when the API starts.
+SQLite is initialized and seeded automatically when the API starts. Supabase is enabled with `DATA_SOURCE=supabase`.
+
+## Supabase Setup
+
+1. Create a Supabase project.
+2. Open the Supabase SQL editor.
+3. Run `docs/supabase-schema.sql`.
+4. Run `docs/supabase-seed.sql`.
+5. Copy `.env.example` to `.env` and set:
+
+```env
+DATA_SOURCE=supabase
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SCHEMA=public
+```
+
+The React app still calls the Bun API. The Bun API fetches dashboard data from Supabase when `DATA_SOURCE=supabase`.
 
 ## Demo Login
 
@@ -63,3 +81,5 @@ bun run test
 ## IoT Backend MVP
 
 The IoT communication layer stores wearable telemetry, creates SOS incidents, creates rest requests, evaluates deterministic risk, records buzzer/rest commands, and tracks command acknowledgement/result states. See `docs/iot-architecture.md` for the MQTT topics, simulator commands, and development plan.
+
+For Supabase mode, use `docs/supabase-iot-contract.md` for the JSON payloads that devices or simulators should send. The dev simulator can still call `POST /api/dev/iot/messages`; when `DATA_SOURCE=supabase`, that endpoint writes the derived IoT records to Supabase.

@@ -27,10 +27,33 @@ import {
   updateIncidentState,
   updateSiteConditions
 } from './iot';
+import {
+  assertSupabaseConfigured,
+  authenticateSupabaseUser,
+  createSupabaseTask,
+  getDataSourceName,
+  getSupabaseIncidentCenter,
+  getSupabaseIoTOverview,
+  getSupabaseNotifications,
+  getSupabaseTasks,
+  getSupabaseUsers,
+  getSupabaseWorkers,
+  getSupabaseWorkforceData,
+  ingestSupabaseIoTMessage,
+  listSupabaseDevices,
+  markSupabaseNotificationRead,
+  shouldUseSupabase,
+  updateSupabaseIncidentState
+} from './supabase';
 
 const port = Number(process.env.API_PORT ?? 3001);
+const useSupabase = shouldUseSupabase();
 
 initializeDatabase();
+
+if (useSupabase) {
+  assertSupabaseConfigured();
+}
 
 const jsonHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,15 +86,15 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/health') {
-      return jsonResponse({ ok: true, database: 'sqlite', service: 'garudie-api' });
+      return jsonResponse({ ok: true, database: getDataSourceName(), service: 'garudie-api' });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/workforce') {
-      return jsonResponse(getWorkforceData());
+      return jsonResponse(useSupabase ? await getSupabaseWorkforceData() : getWorkforceData());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/iot/overview') {
-      return jsonResponse(getIoTOverview());
+      return jsonResponse(useSupabase ? await getSupabaseIoTOverview() : getIoTOverview());
     }
 
     if (request.method === 'POST' && url.pathname === '/api/auth/login') {
@@ -82,7 +105,9 @@ const server = Bun.serve({
           return jsonResponse({ error: 'Email and password are required' }, { status: 400 });
         }
 
-        const user = authenticateUser(body.email, body.password);
+        const user = useSupabase
+          ? await authenticateSupabaseUser(body.email, body.password)
+          : authenticateUser(body.email, body.password);
 
         if (!user) {
           return jsonResponse({ error: 'Invalid email or password' }, { status: 401 });
@@ -95,15 +120,15 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/users') {
-      return jsonResponse(getUsers());
+      return jsonResponse(useSupabase ? await getSupabaseUsers() : getUsers());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/workers') {
-      return jsonResponse(getWorkers());
+      return jsonResponse(useSupabase ? await getSupabaseWorkers() : getWorkers());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/tasks') {
-      return jsonResponse(getTasks());
+      return jsonResponse(useSupabase ? await getSupabaseTasks() : getTasks());
     }
 
     if (request.method === 'POST' && url.pathname === '/api/tasks') {
@@ -132,7 +157,7 @@ const server = Bun.serve({
         return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, and priority are required' }, { status: 400 });
       }
 
-      return jsonResponse(createTask({
+      const taskInput = {
         taskTemplate: body.taskTemplate,
         project: body.project,
         zone: body.zone,
@@ -142,15 +167,17 @@ const server = Bun.serve({
         priority: body.priority,
         notes: body.notes,
         owner: body.owner
-      }), { status: 201 });
+      };
+
+      return jsonResponse(useSupabase ? await createSupabaseTask(taskInput) : createTask(taskInput), { status: 201 });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/notifications') {
-      return jsonResponse(getNotifications());
+      return jsonResponse(useSupabase ? await getSupabaseNotifications() : getNotifications());
     }
 
     if (request.method === 'GET' && url.pathname === '/api/iot/devices') {
-      return jsonResponse(listDevices());
+      return jsonResponse(useSupabase ? await listSupabaseDevices() : listDevices());
     }
 
     const deviceMatch = url.pathname.match(/^\/api\/iot\/devices\/([^/]+)$/);
@@ -292,7 +319,7 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/incidents/center') {
-      return jsonResponse(getIncidentCenter());
+      return jsonResponse(useSupabase ? await getSupabaseIncidentCenter() : getIncidentCenter());
     }
 
     const incidentMatch = url.pathname.match(/^\/api\/incidents\/([^/]+)$/);
@@ -310,7 +337,9 @@ const server = Bun.serve({
     ] as const) {
       const actionMatch = url.pathname.match(new RegExp(`^/api/incidents/([^/]+)/${action}$`));
       if (request.method === 'POST' && actionMatch) {
-        const incident = updateIncidentState(actionMatch[1], state);
+        const incident = useSupabase
+          ? await updateSupabaseIncidentState(actionMatch[1], state)
+          : updateIncidentState(actionMatch[1], state);
         return incident ? jsonResponse(incident) : jsonResponse({ error: 'Incident not found' }, { status: 404 });
       }
     }
@@ -351,7 +380,9 @@ const server = Bun.serve({
         return jsonResponse({ error: 'topic and payload are required' }, { status: 400 });
       }
 
-      const result = processIoTMessage(body.topic, JSON.stringify(body.payload));
+      const result = useSupabase
+        ? await ingestSupabaseIoTMessage(body.topic, JSON.stringify(body.payload))
+        : processIoTMessage(body.topic, JSON.stringify(body.payload));
       return jsonResponse(result, { status: result.ok ? 202 : result.status ?? 400 });
     }
 
@@ -368,7 +399,9 @@ const server = Bun.serve({
     const notificationReadMatch = url.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
 
     if (request.method === 'PATCH' && notificationReadMatch) {
-      const notification = markNotificationRead(notificationReadMatch[1]);
+      const notification = useSupabase
+        ? await markSupabaseNotificationRead(notificationReadMatch[1])
+        : markNotificationRead(notificationReadMatch[1]);
 
       if (!notification) {
         return jsonResponse({ error: 'Notification not found' }, { status: 404 });
