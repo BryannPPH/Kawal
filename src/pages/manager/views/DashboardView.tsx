@@ -105,7 +105,7 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
           onSelectWorker={onSelectWorker}
           onApprove={approveRecommendedAssignment}
         />
-        <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
+        <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} compact />
       </section>
     </div>
   );

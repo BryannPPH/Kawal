@@ -8,10 +8,66 @@ type WorkerRowProps = {
   selected: boolean;
   onSelect: (worker: Worker) => void;
   onOpenDetails?: (worker: Worker) => void;
+  compact?: boolean;
 };
 
-export function WorkerRow({ worker, selected, onSelect, onOpenDetails }: WorkerRowProps) {
+export function WorkerRow({ worker, selected, onSelect, onOpenDetails, compact = false }: WorkerRowProps) {
   const environment = getRowEnvironment(worker);
+
+  if (compact) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelect(worker)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(worker);
+          }
+        }}
+        className={`grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-white px-3 py-3 text-left transition hover:border-[#FAA745] hover:bg-[#FFF8F4] ${
+          selected ? 'border-[#FD7124] ring-2 ring-[#FFEFE6]' : 'border-[#F3D7C8]'
+        }`}
+      >
+        <span className="min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#FFEFE6] text-xs font-semibold text-[#C95119]">
+              {worker.name
+                .split(' ')
+                .map((word) => word[0])
+                .join('')
+                .slice(0, 2)}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-[#2F2C2A]">{worker.name}</span>
+              <span className="mt-0.5 block truncate text-xs text-[#776B63]">{worker.zone} / {worker.task}</span>
+            </span>
+          </span>
+          <span className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3">
+            <span>
+              <span className="flex justify-between text-[11px] font-medium text-[#A09188]">
+                <span>Fatigue</span>
+                <span>{worker.fatigue}%</span>
+              </span>
+              <span className="mt-1.5 block h-1.5 rounded-full bg-[#F5D8C8]">
+                <span
+                  className={`block h-1.5 rounded-full ${worker.fatigue >= 55 ? 'bg-[#FAA745]' : 'bg-[#FD7124]'}`}
+                  style={{ width: `${worker.fatigue}%` }}
+                />
+              </span>
+            </span>
+            <span className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${getEnvironmentBadgeStyle(environment.riskLevel)}`}>{environment.riskLevel}</span>
+          </span>
+        </span>
+
+        <span className="flex flex-col items-end gap-2">
+          <Pill className={statusStyles[worker.status]}>{statusLabels[worker.status]}</Pill>
+          <span className="text-xs font-semibold text-[#C95119]">{formatCompactValue(environment.temperatureC, 'C')} / {formatCompactValue(environment.humidityPct, '%')}</span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div

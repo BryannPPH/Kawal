@@ -8,9 +8,10 @@ type WorkerBoardProps = {
   selectedWorker: Worker;
   onSelectWorker: (worker: Worker) => void;
   onOpenDetails?: (worker: Worker) => void;
+  compact?: boolean;
 };
 
-export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDetails }: WorkerBoardProps) {
+export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDetails, compact = false }: WorkerBoardProps) {
   const [filter, setFilter] = useState<WorkerStatus | 'all'>('all');
   const visibleWorkers = useMemo(() => workers.filter((worker) => filter === 'all' || worker.status === filter), [filter]);
   const statusSummary = (['working', 'waiting', 'break', 'done'] as const).map((status) => ({
@@ -19,13 +20,13 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDet
   }));
 
   return (
-    <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
+    <section className={`rounded-2xl border border-[#F3D7C8] bg-white ${compact ? 'p-4' : 'p-5 sm:p-6'}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-[#2F2C2A]">Worker Dispatch</p>
-          <p className="mt-1 text-sm text-[#776B63]">A lighter board for availability, fatigue, and current assignment.</p>
+          {!compact ? <p className="mt-1 text-sm text-[#776B63]">A lighter board for availability, fatigue, and current assignment.</p> : null}
         </div>
-        <label className="w-full lg:w-48">
+        <label className={`w-full ${compact ? 'lg:w-40' : 'lg:w-48'}`}>
           <span className="sr-only">Filter worker status</span>
           <select
             value={filter}
@@ -40,7 +41,7 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDet
         </label>
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-4">
+      {!compact ? <div className="mt-6 grid gap-3 sm:grid-cols-4">
         {statusSummary.map(({ status, count }) => {
           const percent = workers.length ? Math.round((count / workers.length) * 100) : 0;
 
@@ -63,9 +64,9 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDet
             </button>
           );
         })}
-      </div>
+      </div> : null}
 
-      <div className="mt-6 grid gap-4">
+      <div className={`${compact ? 'mt-4 gap-2' : 'mt-6 gap-4'} grid`}>
         {visibleWorkers.map((worker) => (
           <WorkerRow
             key={worker.id}
@@ -73,6 +74,7 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDet
             selected={selectedWorker.id === worker.id}
             onSelect={onSelectWorker}
             onOpenDetails={onOpenDetails}
+            compact={compact}
           />
         ))}
       </div>
