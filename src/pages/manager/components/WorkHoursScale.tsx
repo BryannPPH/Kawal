@@ -8,6 +8,7 @@ type WorkHoursScaleProps = {
 
 export function WorkHoursScale({ minutes, compact = false }: WorkHoursScaleProps) {
   const safeMinutes = Math.max(0, Math.round(minutes));
+  const noWorkLogged = safeMinutes === 0;
   const overtimeMinutes = Math.max(0, safeMinutes - regularShiftMinutes);
   const overtime = overtimeMinutes > 0;
   const progress = Math.min(100, (safeMinutes / scaleMaximumMinutes) * 100);
@@ -22,13 +23,17 @@ export function WorkHoursScale({ minutes, compact = false }: WorkHoursScaleProps
           </span>
         </span>
         <span className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-semibold ${
-          overtime ? 'bg-[#FFEFE6] text-[#B84011]' : 'bg-[#E9F8EF] text-[#247A4D]'
+          noWorkLogged
+            ? 'bg-[#F1F2F7] text-[#776B63]'
+            : overtime
+              ? 'bg-[#FFEFE6] text-[#B84011]'
+              : 'bg-[#E9F8EF] text-[#247A4D]'
         }`}>
-          {overtime ? `Overtime +${formatWorkedMinutes(overtimeMinutes)}` : 'No overtime'}
+          {noWorkLogged ? 'No work logged' : overtime ? `Overtime +${formatWorkedMinutes(overtimeMinutes)}` : 'No overtime'}
         </span>
       </span>
 
-      <span className="relative mt-3 block h-2 rounded-full bg-white">
+      <span className="relative mt-3 block h-2 rounded-full bg-[#E8D8CF]">
         <span
           className={`block h-2 rounded-full ${overtime ? 'bg-[#FD7124]' : 'bg-[#FAA745]'}`}
           style={{ width: `${progress}%` }}
@@ -49,6 +54,6 @@ export function formatWorkedMinutes(totalMinutes: number) {
   const hours = Math.floor(safeMinutes / 60);
   const minutes = safeMinutes % 60;
 
-  if (!hours) return `${minutes}m`;
+  if (!hours) return minutes ? `${minutes}m` : '0h';
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
 }

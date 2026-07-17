@@ -882,6 +882,7 @@ async function buildSchedulerRecommendation(input: {
     zone: input.zone,
     recommendedCrewSize: workerCount,
     intensity: input.intensity,
+    workload: input.workload,
     workers: availableWorkers
   }).map((worker) => ({
     workerId: worker.workerId,

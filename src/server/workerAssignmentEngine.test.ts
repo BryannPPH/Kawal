@@ -71,4 +71,20 @@ describe('Worker Assignment Engine', () => {
     expect(high.score).toBeLessThan(low.score);
     expect(high.reasons.join(' ')).toContain('High-intensity task');
   });
+
+  it('accounts for prior-day overtime when ranking demanding work', () => {
+    const rested = { ...workers[1], id: 'rested', name: 'Rested Worker', match: 70, yesterdayWorkedMinutes: 480 };
+    const overtime = { ...rested, id: 'overtime', name: 'Overtime Worker', yesterdayWorkedMinutes: 600 };
+    const recommendations = recommendWorkers({
+      taskTemplate: 'Material handling',
+      zone: 'Zone B',
+      recommendedCrewSize: 2,
+      intensity: 'High',
+      workload: 'High',
+      workers: [overtime, rested]
+    });
+
+    expect(recommendations[0].workerId).toBe('rested');
+    expect(recommendations[1].reasons.join(' ')).toContain('prior-day overtime');
+  });
 });

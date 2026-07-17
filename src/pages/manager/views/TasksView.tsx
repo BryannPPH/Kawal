@@ -1,33 +1,34 @@
-import { CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, Clock, ImageIcon, InfoIcon, UserCheck, X, XCircle } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Clock, ImageIcon, InfoIcon, UserCheck, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Pill } from '../../../components/ui/Pill';
 import { toneStyles } from '../../../constants/workforce';
 import type { Task, Worker } from '../../../types/workforce';
 import { AssignmentRankingModal, buildAssignmentCandidates } from '../components/AssignmentPanel';
-import { MetricCard } from '../components/MetricCard';
+import { BulkAutoAssignModal } from '../components/BulkAutoAssignModal';
+import { TaskCalendar } from '../components/TaskCalendar';
 import { TaskPanel } from '../components/TaskPanel';
 
 export function TasksView({
   tasks,
   workers,
   onAutoAssign,
-  onReviewCompletion
+  onReviewCompletion,
+  onOpenWorker
 }: {
   tasks: Task[];
   workers: Worker[];
   onAutoAssign: (taskId: string, workerId?: string) => Promise<Task>;
   onReviewCompletion: (taskId: string, decision: 'accept' | 'reject', note?: string) => Promise<Task>;
+  onOpenWorker: (workerId: string) => void;
 }) {
   const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [bulkAutoAssignOpen, setBulkAutoAssignOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
-  const readyReviewCount = tasks.filter((task) => task.status.toLowerCase().includes('review')).length;
   const safetyOpenCount = tasks.filter((task) => ['high', 'critical'].includes(task.priority.toLowerCase())).length;
-  const assignedCount = tasks.filter((task) => task.owner !== 'Unassigned').length;
-  const assignedPct = tasks.length ? Math.round((assignedCount / tasks.length) * 100) : 0;
   const sortedTasks = tasks
     .slice()
     .sort((left, right) => getTaskUrgencyScore(right, now) - getTaskUrgencyScore(left, now));
@@ -52,33 +53,17 @@ export function TasksView({
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="space-y-8">
-        <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="p-6 sm:p-7">
-              <p className="text-sm font-semibold text-[#C95119]">Tasks</p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#2F2C2A]">Plan the work, then open details only when needed.</h2>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-[#776B63]">The timeline stays light; each task keeps deeper scheduler information inside its popup.</p>
-            </div>
-            <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-6 lg:border-l lg:border-t-0">
-              <div className="grid grid-cols-2 gap-3">
-                <MetricCard label="Total" value={String(tasks.length)} detail="Active tasks" icon={ClipboardList} />
-                <MetricCard label="Review" value={String(readyReviewCount)} detail="Waiting proof" icon={ClipboardCheck} />
-              </div>
-              <div className="mt-4 rounded-2xl bg-white p-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-[#2F2C2A]">Assigned</span>
-                  <span className="text-[#776B63]">{assignedPct}%</span>
-                </div>
-                <div className="mt-3 h-2 rounded-full bg-[#F5D8C8]">
-                  <div className="h-2 rounded-full bg-[#FD7124]" style={{ width: `${assignedPct}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+    <div className="space-y-6">
+      <TaskCalendar
+        tasks={tasks}
+        workers={workers}
+        now={now}
+        onOpenTask={setSelectedTaskId}
+        onOpenWorker={onOpenWorker}
+        onOpenAutoAssign={() => setBulkAutoAssignOpen(true)}
+      />
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -129,9 +114,10 @@ export function TasksView({
             ))}
           </div>
         </section>
+
+        <TaskPanel tasks={tasks} />
       </div>
 
-      <TaskPanel tasks={tasks} />
       {selectedTask ? (
         <TaskDetailModal
           task={selectedTask}
@@ -139,7 +125,16 @@ export function TasksView({
           assigning={assigningTaskId === selectedTask.id}
           onAssign={(workerId) => assignTask(selectedTask.id, workerId)}
           onReviewCompletion={(decision, note) => onReviewCompletion(selectedTask.id, decision, note)}
+          onOpenWorker={onOpenWorker}
           onClose={() => setSelectedTaskId(null)}
+        />
+      ) : null}
+      {bulkAutoAssignOpen ? (
+        <BulkAutoAssignModal
+          tasks={tasks}
+          workers={workers}
+          onAssign={(taskId, workerId) => onAutoAssign(taskId, workerId)}
+          onClose={() => setBulkAutoAssignOpen(false)}
         />
       ) : null}
     </div>
@@ -152,6 +147,7 @@ function TaskDetailModal({
   assigning,
   onAssign,
   onReviewCompletion,
+  onOpenWorker,
   onClose
 }: {
   task: Task;
@@ -159,6 +155,7 @@ function TaskDetailModal({
   assigning: boolean;
   onAssign: (workerId?: string) => Promise<void>;
   onReviewCompletion: (decision: 'accept' | 'reject', note?: string) => Promise<Task>;
+  onOpenWorker: (workerId: string) => void;
   onClose: () => void;
 }) {
   const [reviewing, setReviewing] = useState<'accept' | 'reject' | null>(null);
@@ -170,6 +167,7 @@ function TaskDetailModal({
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [rankedCandidates, setRankedCandidates] = useState<ReturnType<typeof buildAssignmentCandidates>>([]);
   const liveCandidates = useMemo(() => buildAssignmentCandidates(task, workers), [task, workers]);
+  const assignedWorker = workers.find((worker) => worker.name === task.owner) ?? null;
   const canAssign = task.owner === 'Unassigned' && liveCandidates.length > 0;
   const hasProof = Boolean(task.completionProofImage);
   const canReviewProof = task.status.toLowerCase().includes('review') && hasProof && task.completionProofStatus !== 'ACCEPTED';
@@ -400,6 +398,15 @@ function TaskDetailModal({
               >
                 <UserCheck size={15} />
                 Assign
+              </button>
+            ) : assignedWorker ? (
+              <button
+                type="button"
+                onClick={() => onOpenWorker(assignedWorker.id)}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#F3D7C8] bg-white px-3 text-xs font-semibold text-[#C95119] transition hover:border-[#FD7124] hover:bg-[#FFEFE6]"
+              >
+                <UserCheck size={15} />
+                View Worker
               </button>
             ) : null}
           </div>

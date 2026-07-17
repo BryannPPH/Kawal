@@ -2288,6 +2288,7 @@ async function makeSchedulerRecommendation(
     zone: input.zone,
     recommendedCrewSize: workerCount,
     intensity: input.intensity,
+    workload: input.workload,
     workers: availableWorkers
   })
     .map((worker) => ({

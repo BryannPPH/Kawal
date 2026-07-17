@@ -321,6 +321,7 @@ const server = Bun.serve({
         zone?: string;
         recommendedCrewSize?: number;
         intensity?: 'Low' | 'Medium' | 'High';
+        workload?: string;
       }>(request);
 
       if (!body.taskTemplate?.trim()) {
@@ -336,6 +337,7 @@ const server = Bun.serve({
           zone: body.zone,
           recommendedCrewSize: body.recommendedCrewSize ?? 3,
           intensity: body.intensity,
+          workload: body.workload,
           workers: getWorkers()
         })
       });
