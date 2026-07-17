@@ -45,6 +45,7 @@ export function initializeDatabase() {
 export function resetAndSeedDatabase() {
   createTables();
   db.exec(`
+    DELETE FROM supabase_iot_runtime_state;
     DELETE FROM data_collection_status;
     DELETE FROM fatigue_evaluations;
     DELETE FROM ppe_checks;
@@ -126,6 +127,14 @@ function createTables() {
       target_worker_id TEXT,
       created_at TEXT NOT NULL DEFAULT '',
       read INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS supabase_iot_runtime_state (
+      category TEXT NOT NULL,
+      state_key TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (category, state_key)
     );
 
     CREATE TABLE IF NOT EXISTS ppe_checks (

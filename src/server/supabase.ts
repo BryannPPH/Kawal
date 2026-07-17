@@ -4,6 +4,7 @@ import type { IoTDevice, IncidentCenterData, IoTIncident, IoTOverview } from '..
 import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
 import { estimateCapacity, inferWorkload } from './capacityEstimator';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
+import { db } from './database';
 import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
 import type { Envelope } from './iot';
 import { getLatestPpeCheck, runPpeCheck } from './ppe';
@@ -15,26 +16,34 @@ const supabaseRestUrl = configuredSupabaseUrl.endsWith('/rest/v1') ? configuredS
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabaseSchema = process.env.SUPABASE_SCHEMA ?? 'public';
 const supabaseDataModel = process.env.SUPABASE_DATA_MODEL ?? 'workforce';
+const supabaseRequestTimeoutMs = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS ?? 3500));
+const supabaseReadCache = new Map<string, unknown[]>();
+const supabaseWarningTimes = new Map<string, number>();
 
 const fallbackUsers = [
   { id: 'manager-demo', name: 'Project Manager', email: 'manager@gmail.com', role: 'manager' },
   { id: 'worker-demo', name: 'Budi Santoso', email: 'worker@gmail.com', role: 'worker' }
 ] satisfies AuthUser[];
 
-const iotTaskProofs = new Map<string, {
+type IoTTaskProof = {
   workerId: string;
   imageDataUrl: string;
   submittedAt: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
   note?: string;
-}>();
-const iotRuntimeNotifications: Notification[] = [];
-const iotIncidentStateOverrides = new Map<string, {
+};
+
+type IoTIncidentStateOverride = {
   state: string;
   escalationLevel?: number;
   updatedAt: string;
-}>();
-const iotRuntimeTasks = new Map<string, Task>();
+};
+
+const iotTaskProofs = loadRuntimeStateMap<IoTTaskProof>('task-proof');
+const iotRuntimeNotifications = loadRuntimeStateValues<Notification>('notification')
+  .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+const iotIncidentStateOverrides = loadRuntimeStateMap<IoTIncidentStateOverride>('incident-state');
+const iotRuntimeTasks = loadRuntimeStateMap<Task>('task');
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey);
@@ -137,6 +146,7 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
     const snapshot = await getSupabaseIoTSnapshot();
     const task = await createSupabaseIoTStubTask(input, snapshot.workers);
     iotRuntimeTasks.set(task.id, task);
+    persistRuntimeState('task', task.id, task);
     return task;
   }
 
@@ -198,9 +208,10 @@ export async function autoAssignSupabaseTask(taskId: string, workerId?: string):
 
     if (iotRuntimeTasks.has(taskId)) {
       iotRuntimeTasks.set(taskId, assignedTask);
+      persistRuntimeState('task', taskId, assignedTask);
     }
 
-    iotRuntimeNotifications.unshift({
+    addRuntimeNotification({
       id: `iot-task-assigned-${crypto.randomUUID()}`,
       title: 'New task assigned',
       detail: `${assignedTask.title} was assigned to ${assignedTask.owner} in ${assignedTask.zone}.`,
@@ -277,6 +288,7 @@ export async function markSupabaseNotificationRead(notificationId: string): Prom
 
     if (runtimeNotification) {
       runtimeNotification.read = true;
+      persistRuntimeState('notification', runtimeNotification.id, runtimeNotification);
       return { ...runtimeNotification };
     }
 
@@ -365,11 +377,13 @@ export async function updateSupabaseIncidentState(incidentId: string, state: str
       return null;
     }
 
-    iotIncidentStateOverrides.set(incidentId, {
+    const override = {
       state,
       escalationLevel: state === 'ESCALATED' ? Math.max(incident.escalation_level + 1, 2) : incident.escalation_level,
       updatedAt: new Date().toISOString()
-    });
+    };
+    iotIncidentStateOverrides.set(incidentId, override);
+    persistRuntimeState('incident-state', incidentId, override);
 
     return applyIoTIncidentStateOverride(incident);
   }
@@ -486,16 +500,28 @@ export async function completeSupabaseWorkerAssignment(workerId: string, imageDa
 
   if (shouldUseSupabaseIoTModel()) {
     const submittedAt = new Date().toISOString();
-    iotTaskProofs.set('iot-live-shift', {
+    const data = await getSupabaseIoTWorkerAppData(workerId);
+    const workerName = data.worker?.name;
+    const task = data.tasks.find((item) => item.owner === workerName && !['Done', 'Review'].includes(item.status))
+      ?? data.tasks.find((item) => item.id === 'iot-live-shift')
+      ?? data.tasks[0];
+
+    if (!task) {
+      throw new Error('No active task is available for completion proof');
+    }
+
+    const proof = {
       workerId,
       imageDataUrl,
       submittedAt,
-      status: 'PENDING'
-    });
-    iotRuntimeNotifications.unshift({
+      status: 'PENDING' as const
+    };
+    iotTaskProofs.set(task.id, proof);
+    persistRuntimeState('task-proof', task.id, proof);
+    addRuntimeNotification({
       id: `iot-task-proof-${crypto.randomUUID()}`,
       title: 'Task proof ready',
-      detail: 'Budi Santoso submitted a completion photo for IoT monitored field work.',
+      detail: `${workerName ?? 'Worker'} submitted a completion photo for ${task.title}.`,
       tone: 'success',
       targetLabel: 'Review proof',
       targetSection: 'tasks',
@@ -504,10 +530,10 @@ export async function completeSupabaseWorkerAssignment(workerId: string, imageDa
       read: false
     });
 
-    const data = await getSupabaseIoTWorkerAppData(workerId);
+    const nextData = await getSupabaseIoTWorkerAppData(workerId);
     return {
-      ...data,
-      worker: data.worker ? { ...data.worker, status: 'done' as const } : data.worker,
+      ...nextData,
+      worker: nextData.worker ? { ...nextData.worker, status: 'done' as const } : nextData.worker,
       action: { ok: true, fallback: true, proofSubmitted: true }
     };
   }
@@ -554,7 +580,8 @@ export async function reviewSupabaseTaskCompletion(taskId: string, decision: 'ac
     proof.status = decision === 'accept' ? 'ACCEPTED' : 'REJECTED';
     proof.note = note?.trim() || (decision === 'accept' ? 'Accepted by manager' : 'Please submit a clearer completion photo.');
     iotTaskProofs.set(taskId, proof);
-    iotRuntimeNotifications.unshift({
+    persistRuntimeState('task-proof', taskId, proof);
+    addRuntimeNotification({
       id: `iot-task-review-${crypto.randomUUID()}`,
       title: decision === 'accept' ? 'Completion accepted' : 'Completion needs revision',
       detail: decision === 'accept'
@@ -1123,7 +1150,33 @@ async function getSupabaseIoTWorkerAppData(workerId: string) {
   };
 }
 
-async function getSupabaseIoTSnapshot() {
+type SupabaseIoTSnapshot = Awaited<ReturnType<typeof loadSupabaseIoTSnapshot>>;
+
+let cachedIoTSnapshot: { value: SupabaseIoTSnapshot; expiresAt: number } | null = null;
+let pendingIoTSnapshot: Promise<SupabaseIoTSnapshot> | null = null;
+
+async function getSupabaseIoTSnapshot(): Promise<SupabaseIoTSnapshot> {
+  if (cachedIoTSnapshot && cachedIoTSnapshot.expiresAt > Date.now()) {
+    return cachedIoTSnapshot.value;
+  }
+
+  if (pendingIoTSnapshot) {
+    return pendingIoTSnapshot;
+  }
+
+  pendingIoTSnapshot = loadSupabaseIoTSnapshot()
+    .then((value) => {
+      cachedIoTSnapshot = { value, expiresAt: Date.now() + 2500 };
+      return value;
+    })
+    .finally(() => {
+      pendingIoTSnapshot = null;
+    });
+
+  return pendingIoTSnapshot;
+}
+
+async function loadSupabaseIoTSnapshot() {
   const [environmentRows, workHourRows, warningRows, inactivityRows, restBreakRows] = await Promise.all([
     safeSelectRows<IoTEnvironmentConditionRow>('environment_condition', 'select=*&order=created_at.desc&limit=30'),
     safeSelectRows<IoTWorkHoursRow>('work_hours', 'select=*&order=start_time.desc&limit=50'),
@@ -1198,16 +1251,100 @@ async function getSupabaseIoTSnapshot() {
 }
 
 async function safeSelectRows<T>(tableName: string, query: string): Promise<T[]> {
+  const cacheKey = `${tableName}?${query}`;
+
   try {
-    return await selectRows<T>(tableName, query);
+    const rows = await selectRows<T>(tableName, query);
+    supabaseReadCache.set(cacheKey, rows);
+    return rows;
   } catch (error) {
     if (String(error).includes('(401)')) {
       throw error;
     }
 
-    console.warn(`Supabase ${tableName} unavailable, using stub data:`, error);
-    return [];
+    const now = Date.now();
+    const lastWarning = supabaseWarningTimes.get(cacheKey) ?? 0;
+
+    if (now - lastWarning > 30_000) {
+      console.warn(`Supabase ${tableName} unavailable, using last known data:`, error);
+      supabaseWarningTimes.set(cacheKey, now);
+    }
+
+    return (supabaseReadCache.get(cacheKey) as T[] | undefined) ?? [];
   }
+}
+
+type RuntimeStateRow = {
+  state_key: string;
+  payload: string;
+};
+
+function ensureRuntimeStateTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS supabase_iot_runtime_state (
+      category TEXT NOT NULL,
+      state_key TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (category, state_key)
+    )
+  `);
+}
+
+function loadRuntimeStateValues<T>(category: string): T[] {
+  ensureRuntimeStateTable();
+  const rows = db.query<RuntimeStateRow, [string]>(`
+    SELECT state_key, payload
+    FROM supabase_iot_runtime_state
+    WHERE category = ?
+    ORDER BY updated_at DESC
+  `).all(category);
+
+  return rows.flatMap((row) => {
+    try {
+      return [JSON.parse(row.payload) as T];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function loadRuntimeStateMap<T>(category: string): Map<string, T> {
+  ensureRuntimeStateTable();
+  const rows = db.query<RuntimeStateRow, [string]>(`
+    SELECT state_key, payload
+    FROM supabase_iot_runtime_state
+    WHERE category = ?
+    ORDER BY updated_at ASC
+  `).all(category);
+  const values = new Map<string, T>();
+
+  for (const row of rows) {
+    try {
+      values.set(row.state_key, JSON.parse(row.payload) as T);
+    } catch {
+      // Ignore a malformed cache row without blocking the application.
+    }
+  }
+
+  return values;
+}
+
+function persistRuntimeState(category: string, stateKey: string, payload: unknown) {
+  ensureRuntimeStateTable();
+  db.prepare(`
+    INSERT INTO supabase_iot_runtime_state (category, state_key, payload, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(category, state_key) DO UPDATE SET
+      payload = excluded.payload,
+      updated_at = excluded.updated_at
+  `).run(category, stateKey, JSON.stringify(payload), new Date().toISOString());
+  cachedIoTSnapshot = null;
+}
+
+function addRuntimeNotification(notification: Notification) {
+  iotRuntimeNotifications.unshift(notification);
+  persistRuntimeState('notification', notification.id, notification);
 }
 
 function makeIoTWorker(
@@ -1787,31 +1924,57 @@ async function supabaseRequest<T>(
   assertSupabaseConfigured();
 
   const separator = query ? `?${query}` : '';
-  const response = await fetch(`${supabaseRestUrl}/${tableName}${separator}`, {
-    method: init.method ?? 'GET',
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'Accept-Profile': supabaseSchema,
-      'Content-Profile': supabaseSchema,
-      ...(init.prefer ? { Prefer: init.prefer } : {})
-    },
-    body: init.body
-  });
+  const method = init.method ?? 'GET';
+  const maxAttempts = method === 'GET' ? 2 : 1;
+  let lastError: unknown;
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Supabase ${tableName} request failed (${response.status}): ${detail}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), supabaseRequestTimeoutMs);
+
+    try {
+      const response = await fetch(`${supabaseRestUrl}/${tableName}${separator}`, {
+        method,
+        signal: controller.signal,
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Accept-Profile': supabaseSchema,
+          'Content-Profile': supabaseSchema,
+          ...(init.prefer ? { Prefer: init.prefer } : {})
+        },
+        body: init.body
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new SupabaseHttpError(`Supabase ${tableName} request failed (${response.status}): ${detail}`);
+      }
+
+      if (response.status === 204) {
+        return [] as T;
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+
+      if (error instanceof SupabaseHttpError || attempt === maxAttempts) {
+        throw error;
+      }
+
+      await Bun.sleep(180 * attempt);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  if (response.status === 204) {
-    return [] as T;
-  }
-
-  return (await response.json()) as T;
+  throw lastError;
 }
+
+class SupabaseHttpError extends Error {}
 
 function mapWorker(row: SupabaseWorkerRow): Worker {
   return {
