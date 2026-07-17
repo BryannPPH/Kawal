@@ -2,12 +2,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const candidates = [
-  join(process.cwd(), '.venv', 'bin', 'python.exe'),
+  join(process.cwd(), '.venv', 'bin', 'python'),
   join(process.cwd(), '.venv', 'Scripts', 'python.exe'),
+  'python3',
   'python'
 ];
 
-const python = candidates.find((candidate) => candidate === 'python' || existsSync(candidate)) ?? 'python';
+const python = candidates.find((candidate) => existsSync(candidate) || Boolean(Bun.which(candidate))) ?? 'python3';
 
 const child = Bun.spawn([
   python,

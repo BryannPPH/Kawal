@@ -1,18 +1,21 @@
 import { CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, Clock, ImageIcon, InfoIcon, UserCheck, X, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pill } from '../../../components/ui/Pill';
 import { toneStyles } from '../../../constants/workforce';
-import type { Task } from '../../../types/workforce';
+import type { Task, Worker } from '../../../types/workforce';
+import { AssignmentRankingModal, buildAssignmentCandidates } from '../components/AssignmentPanel';
 import { MetricCard } from '../components/MetricCard';
 import { TaskPanel } from '../components/TaskPanel';
 
 export function TasksView({
   tasks,
+  workers,
   onAutoAssign,
   onReviewCompletion
 }: {
   tasks: Task[];
-  onAutoAssign: (taskId: string) => Promise<Task>;
+  workers: Worker[];
+  onAutoAssign: (taskId: string, workerId?: string) => Promise<Task>;
   onReviewCompletion: (taskId: string, decision: 'accept' | 'reject', note?: string) => Promise<Task>;
 }) {
   const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
@@ -34,14 +37,15 @@ export function TasksView({
     return () => window.clearInterval(timer);
   }, []);
 
-  const assignTask = async (taskId: string) => {
+  const assignTask = async (taskId: string, workerId?: string) => {
     setAssigningTaskId(taskId);
     setAssignmentError(null);
 
     try {
-      await onAutoAssign(taskId);
+      await onAutoAssign(taskId, workerId);
     } catch (error) {
       setAssignmentError(error instanceof Error ? error.message : 'Unable to assign task');
+      throw error;
     } finally {
       setAssigningTaskId(null);
     }
@@ -130,8 +134,9 @@ export function TasksView({
       {selectedTask ? (
         <TaskDetailModal
           task={selectedTask}
+          workers={workers}
           assigning={assigningTaskId === selectedTask.id}
-          onAssign={() => assignTask(selectedTask.id)}
+          onAssign={(workerId) => assignTask(selectedTask.id, workerId)}
           onReviewCompletion={(decision, note) => onReviewCompletion(selectedTask.id, decision, note)}
           onClose={() => setSelectedTaskId(null)}
         />
@@ -142,23 +147,94 @@ export function TasksView({
 
 function TaskDetailModal({
   task,
+  workers,
   assigning,
   onAssign,
   onReviewCompletion,
   onClose
 }: {
   task: Task;
+  workers: Worker[];
   assigning: boolean;
-  onAssign: () => void;
+  onAssign: (workerId?: string) => Promise<void>;
   onReviewCompletion: (decision: 'accept' | 'reject', note?: string) => Promise<Task>;
   onClose: () => void;
 }) {
   const [reviewing, setReviewing] = useState<'accept' | 'reject' | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
-  const canAssign = task.owner === 'Unassigned' && task.schedulerRecommendation.selectedWorkerRecommendations.length > 0;
+  const [assignmentRankingOpen, setAssignmentRankingOpen] = useState(false);
+  const [assignmentScanReady, setAssignmentScanReady] = useState(false);
+  const [assignmentScanStep, setAssignmentScanStep] = useState(0);
+  const [selectedWorkerId, setSelectedWorkerId] = useState('');
+  const [rankedCandidates, setRankedCandidates] = useState<ReturnType<typeof buildAssignmentCandidates>>([]);
+  const liveCandidates = useMemo(() => buildAssignmentCandidates(task, workers), [task, workers]);
+  const canAssign = task.owner === 'Unassigned' && liveCandidates.length > 0;
   const hasProof = Boolean(task.completionProofImage);
   const canReviewProof = task.status.toLowerCase().includes('review') && hasProof && task.completionProofStatus !== 'ACCEPTED';
+
+  useEffect(() => {
+    setAssignmentRankingOpen(false);
+    setAssignmentScanReady(false);
+    setAssignmentScanStep(0);
+  }, [task.id]);
+
+  useEffect(() => {
+    if (!assignmentRankingOpen) {
+      setAssignmentScanReady(false);
+      setAssignmentScanStep(0);
+      return;
+    }
+
+    setAssignmentScanReady(false);
+    setAssignmentScanStep(0);
+    const stepTimer = window.setInterval(() => {
+      setAssignmentScanStep((step) => Math.min(3, step + 1));
+    }, 430);
+    const readyTimer = window.setTimeout(() => {
+      setAssignmentScanReady(true);
+      window.clearInterval(stepTimer);
+      setAssignmentScanStep(3);
+    }, 1750);
+
+    return () => {
+      window.clearInterval(stepTimer);
+      window.clearTimeout(readyTimer);
+    };
+  }, [assignmentRankingOpen, task.id]);
+
+  const openAssignmentRanking = () => {
+    setRankedCandidates(liveCandidates);
+    setSelectedWorkerId(liveCandidates[0]?.worker.id ?? '');
+    setAssignmentRankingOpen(true);
+  };
+
+  const confirmAssignment = async () => {
+    const workerId = selectedWorkerId || rankedCandidates[0]?.worker.id;
+
+    try {
+      await onAssign(workerId);
+      setAssignmentRankingOpen(false);
+    } catch {
+      // The parent already exposes the request error in the task page.
+    }
+  };
+
+  if (assignmentRankingOpen) {
+    return (
+      <AssignmentRankingModal
+        task={task}
+        candidates={rankedCandidates}
+        assigning={assigning}
+        scanReady={assignmentScanReady}
+        scanStep={assignmentScanStep}
+        selectedWorkerId={selectedWorkerId || rankedCandidates[0]?.worker.id || null}
+        onSelectWorker={(worker) => setSelectedWorkerId(worker.id)}
+        onClose={() => setAssignmentRankingOpen(false)}
+        onConfirm={() => void confirmAssignment()}
+      />
+    );
+  }
 
   const submitReview = async (decision: 'accept' | 'reject') => {
     setReviewing(decision);
@@ -214,15 +290,6 @@ function TaskDetailModal({
               <Info label="Delay prediction" value={task.schedulerRecommendation.chronosForecast.delayPrediction} />
               <Info label="Add crew" value={String(task.schedulerRecommendation.chronosForecast.suggestedAdditionalCrew)} />
             </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {task.schedulerRecommendation.selectedWorkerRecommendations.map((worker) => (
-              <div key={worker.workerId} className="rounded-xl border border-[#F3D7C8] bg-white px-3 py-3">
-                <p className="text-sm font-semibold text-[#2F2C2A]">{worker.workerName}</p>
-                <p className="mt-1 text-xs leading-5 text-[#776B63]">{worker.explanation}</p>
-              </div>
-            ))}
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -325,12 +392,12 @@ function TaskDetailModal({
             {task.owner === 'Unassigned' ? (
               <button
                 type="button"
-                onClick={onAssign}
+                onClick={openAssignmentRanking}
                 disabled={assigning || !canAssign}
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#FD7124] px-3 text-xs font-semibold text-white transition hover:bg-[#E85F18] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <UserCheck size={15} />
-                {assigning ? 'Assigning...' : 'Auto assign best worker'}
+                Assign
               </button>
             ) : null}
           </div>

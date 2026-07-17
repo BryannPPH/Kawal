@@ -431,6 +431,10 @@ function seedWorkers() {
 }
 
 function seedTasks() {
+  if (process.env.SEED_DEMO_TASKS !== 'true') {
+    return;
+  }
+
   const insertTask = db.prepare(`
     INSERT OR IGNORE INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
@@ -671,17 +675,35 @@ export async function createTask(input: {
   return task;
 }
 
-export async function autoAssignTask(taskId: string): Promise<Task | null> {
+export async function autoAssignTask(taskId: string, workerId?: string): Promise<Task | null> {
   const row = db.query<TaskRow, [string]>('SELECT * FROM tasks WHERE id = ?').get(taskId);
 
   if (!row) {
     return null;
   }
 
-  const task = await mapTask(row, getWorkers());
-  const bestWorker = task.schedulerRecommendation.selectedWorkerRecommendations[0];
+  const workers = getWorkers();
+  const task = await mapTask(row, workers);
 
-  if (!bestWorker) {
+  if (task.owner !== 'Unassigned') {
+    return task;
+  }
+
+  const rankedWorker = workerId
+    ? task.schedulerRecommendation.selectedWorkerRecommendations.find((worker) => worker.workerId === workerId)
+    : task.schedulerRecommendation.selectedWorkerRecommendations[0];
+  const selectedWorker = workerId
+    ? workers.find((worker) => worker.id === workerId)
+    : rankedWorker
+      ? workers.find((worker) => worker.id === rankedWorker.workerId || worker.name === rankedWorker.workerName)
+      : null;
+  const bestWorker = rankedWorker ?? (selectedWorker ? {
+    workerId: selectedWorker.id,
+    workerName: selectedWorker.name,
+    explanation: 'Manager selected this worker from the assignment ranking.'
+  } : null);
+
+  if (!bestWorker || !selectedWorker) {
     throw new Error('No eligible worker is available for automatic assignment');
   }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { notifications as fallbackNotifications, tasks as fallbackTasks, workers as fallbackWorkers } from '../constants/workforce';
+import { notifications as fallbackNotifications, workers as fallbackWorkers } from '../constants/workforce';
 import type { Notification, Task, WorkforceData } from '../types/workforce';
 
 export type WorkerRestRecommendation = {
@@ -13,7 +13,7 @@ export type WorkerRestRecommendation = {
 
 const fallbackData: WorkforceData = {
   workers: fallbackWorkers,
-  tasks: fallbackTasks,
+  tasks: [],
   notifications: fallbackNotifications
 };
 
@@ -124,8 +124,14 @@ export function useWorkforceData() {
     return createdTask;
   };
 
-  const autoAssignTask = async (taskId: string) => {
-    const response = await fetch(`/api/tasks/${taskId}/auto-assign`, { method: 'PATCH' });
+  const autoAssignTask = async (taskId: string, workerId?: string) => {
+    const response = await fetch(`/api/tasks/${taskId}/auto-assign`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ workerId })
+    });
     const payload = (await response.json()) as Task | { error?: string };
 
     if (!response.ok || isTaskError(payload)) {

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, root_validator, validator
 
 MODEL_ID = "amazon/chronos-2"
 
@@ -20,11 +20,23 @@ class ForecastRequest(BaseModel):
     active_workers: list[float] = Field(min_items=1)
     prediction_length: int = Field(default=4, ge=1, le=24)
 
+    @root_validator(pre=True)
+    def accept_camel_case_payload(cls, values: dict[str, Any]) -> dict[str, Any]:
+        aliases = {
+            "historicalCompletedQuantity": "historical_completed_quantity",
+            "workerHours": "worker_hours",
+            "breakMinutes": "break_minutes",
+            "activeWorkers": "active_workers",
+            "predictionLength": "prediction_length",
+        }
+        for camel_key, snake_key in aliases.items():
+            if camel_key in values and snake_key not in values:
+                values[snake_key] = values[camel_key]
+        return values
+
     @validator("worker_hours", "active_workers")
     def positive_values(cls, values: list[float]) -> list[float]:
-        if any(value <= 0 for value in values):
-            raise ValueError("worker_hours and active_workers must contain positive values")
-        return values
+        return [max(value, 0.1) for value in values]
 
 
 class ForecastResponse(BaseModel):
@@ -34,7 +46,7 @@ class ForecastResponse(BaseModel):
     forecastVersion: Literal["chronos-2-fastapi-v1"]
     confidence: Literal["COLD_START", "INFERRED", "HISTORICAL"]
     model: str
-    modelStatus: Literal["READY"]
+    modelStatus: Literal["READY", "UNAVAILABLE"]
     forecastValues: list[float]
 
 
@@ -50,10 +62,10 @@ def health() -> dict[str, object]:
 
 @app.post("/forecast", response_model=ForecastResponse)
 def forecast(request: ForecastRequest) -> ForecastResponse:
-    pipeline = get_pipeline()
     context_df = build_context_frame(request)
 
     try:
+        pipeline = get_pipeline()
         prediction_df = pipeline.predict_df(
             context_df,
             prediction_length=request.prediction_length,
@@ -63,11 +75,11 @@ def forecast(request: ForecastRequest) -> ForecastResponse:
             target="target",
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Chronos inference failed: {exc}") from exc
+        return fallback_forecast(request, context_df, f"Chronos inference unavailable: {exc}")
 
     values = extract_forecast_values(prediction_df)
     if not values:
-        raise HTTPException(status_code=500, detail="Chronos returned no forecast values")
+        return fallback_forecast(request, context_df, "Chronos returned no forecast values")
 
     median_value = values[len(values) // 2]
     previous_productivity = context_df["target"].tail(min(3, len(context_df))).mean()
@@ -86,6 +98,36 @@ def forecast(request: ForecastRequest) -> ForecastResponse:
         confidence=infer_confidence(request),
         model=MODEL_ID,
         modelStatus="READY",
+        forecastValues=[round(value, 4) for value in values],
+    )
+
+
+def fallback_forecast(request: ForecastRequest, context_df: Any, reason: str) -> ForecastResponse:
+    target_values = [float(value) for value in context_df["target"].dropna().tolist()]
+    last_value = target_values[-1] if target_values else 1.0
+    previous_value = target_values[-2] if len(target_values) > 1 else last_value
+    trend = last_value - previous_value
+    fatigue_drag = sum(request.break_minutes) / max(1, len(request.break_minutes)) / 120
+    values = [
+        max(0.05, last_value + (trend * (index + 1) * 0.45) - fatigue_drag)
+        for index in range(request.prediction_length)
+    ]
+    median_value = values[len(values) // 2]
+    previous_productivity = sum(target_values[-3:]) / max(1, min(3, len(target_values)))
+    suggested_crew = 1 if median_value < previous_productivity * 0.85 else 0
+
+    return ForecastResponse(
+        futureProductivity=f"{median_value:.2f} units/worker-hour",
+        delayPrediction=(
+            "Fallback forecast: productivity may miss the required pace; add one worker or reduce rework."
+            if suggested_crew
+            else "Fallback forecast: current productivity trend is close to the required pace."
+        ),
+        suggestedAdditionalCrew=suggested_crew,
+        forecastVersion="chronos-2-fastapi-v1",
+        confidence=infer_confidence(request),
+        model=f"{MODEL_ID} fallback",
+        modelStatus="UNAVAILABLE",
         forecastValues=[round(value, 4) for value in values],
     )
 

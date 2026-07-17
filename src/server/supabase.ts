@@ -34,6 +34,7 @@ const iotIncidentStateOverrides = new Map<string, {
   escalationLevel?: number;
   updatedAt: string;
 }>();
+const iotRuntimeTasks = new Map<string, Task>();
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey);
@@ -133,7 +134,10 @@ export async function getSupabaseWorkforceData(): Promise<WorkforceData> {
 
 export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> {
   if (shouldUseSupabaseIoTModel()) {
-    return createSupabaseIoTStubTask(input);
+    const snapshot = await getSupabaseIoTSnapshot();
+    const task = await createSupabaseIoTStubTask(input, snapshot.workers);
+    iotRuntimeTasks.set(task.id, task);
+    return task;
   }
 
   const [workers, environmentRows] = await Promise.all([
@@ -169,12 +173,46 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
   return mapTask(row);
 }
 
-export async function autoAssignSupabaseTask(taskId: string): Promise<Task | null> {
+export async function autoAssignSupabaseTask(taskId: string, workerId?: string): Promise<Task | null> {
   if (shouldUseSupabaseIoTModel()) {
     const snapshot = await getSupabaseIoTSnapshot();
-    const task = snapshot.tasks.find((item) => item.id === taskId) ?? snapshot.tasks[0] ?? null;
-    const worker = snapshot.workers[0];
-    return task && worker ? { ...task, owner: worker.name, status: 'Assigned', due: 'IoT-backed stub' } : task;
+    const task = snapshot.tasks.find((item) => item.id === taskId) ?? null;
+
+    if (!task) {
+      return null;
+    }
+
+    if (task.owner !== 'Unassigned') {
+      return task;
+    }
+
+    const recommendedWorker = task.schedulerRecommendation.selectedWorkerRecommendations[0];
+    const worker = workerId
+      ? snapshot.workers.find((item) => item.id === workerId) ?? snapshot.workers[0]
+      : recommendedWorker
+        ? snapshot.workers.find((item) => item.id === recommendedWorker.workerId || item.name === recommendedWorker.workerName) ?? snapshot.workers[0]
+        : snapshot.workers[0];
+    const assignedTask = worker
+      ? { ...task, owner: worker.name, status: 'Assigned', due: 'Waiting start', tone: 'success' as Tone }
+      : task;
+
+    if (iotRuntimeTasks.has(taskId)) {
+      iotRuntimeTasks.set(taskId, assignedTask);
+    }
+
+    iotRuntimeNotifications.unshift({
+      id: `iot-task-assigned-${crypto.randomUUID()}`,
+      title: 'New task assigned',
+      detail: `${assignedTask.title} was assigned to ${assignedTask.owner} in ${assignedTask.zone}.`,
+      tone: 'neutral',
+      targetLabel: 'Open task',
+      targetSection: 'tasks',
+      targetWorkerId: worker?.id,
+      createdAt: new Date().toISOString(),
+      read: false
+    });
+
+    return assignedTask;
   }
 
   const [row] = await selectRows<SupabaseTaskRow>('tasks', `select=*&id=eq.${encodeFilterValue(taskId)}&limit=1`);
@@ -182,9 +220,27 @@ export async function autoAssignSupabaseTask(taskId: string): Promise<Task | nul
   if (!row) return null;
 
   const task = mapTask(row);
-  const bestWorker = task.schedulerRecommendation.selectedWorkerRecommendations[0];
 
-  if (!bestWorker) {
+  if (task.owner !== 'Unassigned') {
+    return task;
+  }
+
+  const allWorkers = await getSupabaseWorkers();
+  const rankedWorker = workerId
+    ? task.schedulerRecommendation.selectedWorkerRecommendations.find((worker) => worker.workerId === workerId)
+    : task.schedulerRecommendation.selectedWorkerRecommendations[0];
+  const selectedWorker = workerId
+    ? allWorkers.find((worker) => worker.id === workerId)
+    : rankedWorker
+      ? allWorkers.find((worker) => worker.id === rankedWorker.workerId || worker.name === rankedWorker.workerName)
+      : null;
+  const bestWorker = rankedWorker ?? (selectedWorker ? {
+    workerId: selectedWorker.id,
+    workerName: selectedWorker.name,
+    explanation: 'Manager selected this worker from the assignment ranking.'
+  } : null);
+
+  if (!bestWorker || !selectedWorker) {
     throw new Error('No eligible worker is available for automatic assignment');
   }
 
@@ -1090,7 +1146,10 @@ async function getSupabaseIoTSnapshot() {
       environment: makeStubWorkerEnvironment(worker)
     }))
   ];
-  const tasks = applyIoTTaskProofs(makeIoTTasks(primaryWorker, latestEnvironment, latestWorkHour));
+  const tasks = applyIoTTaskProofs([
+    ...Array.from(iotRuntimeTasks.values()),
+    ...makeIoTTasks(primaryWorker, latestEnvironment, latestWorkHour)
+  ]);
   const activeIncidents = warningRows
     .filter((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning))
     .map((row) => mapIoTWarningIncident(row, primaryWorker))
@@ -1187,11 +1246,22 @@ function makeIoTWorker(
 }
 
 function makeIoTTasks(worker: Worker, environment: IoTEnvironmentConditionRow | null, workHour: IoTWorkHoursRow | null): Task[] {
-  const primary = fallbackTasks[0];
+  const durationSeconds = workHour?.duration_seconds ?? secondsBetween(workHour?.start_time, workHour?.stop_time);
+  const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
+  const stopReason = normalizeWarningEvent(workHour?.stop_reason);
+  const checkpointDeadline = workHour?.stop_time
+    ?? (workHour?.start_time
+      ? new Date(new Date(workHour.start_time).getTime() + Math.max(30, durationMinutes + 15) * 60_000).toISOString()
+      : new Date(Date.now() + 30 * 60_000).toISOString());
+  const priority = worker.status === 'emergency' || ['SOS', 'JATUH'].includes(stopReason)
+    ? 'Critical'
+    : worker.fatigue >= 65
+      ? 'High'
+      : 'Medium';
+  const tone: Tone = priority === 'Critical' ? 'danger' : priority === 'High' ? 'warning' : 'neutral';
 
   return [
     {
-      ...primary,
       id: 'iot-live-shift',
       title: 'IoT monitored field work',
       owner: worker.name,
@@ -1199,22 +1269,88 @@ function makeIoTTasks(worker: Worker, environment: IoTEnvironmentConditionRow | 
       taskTemplate: 'Field safety operation',
       project: 'Kawal IoT Integration',
       zone: worker.zone,
-      quantity: Math.max(1, Math.round((workHour?.duration_seconds ?? 0) / 60)),
+      quantity: durationMinutes,
       unit: 'minutes',
-      deadline: workHour?.stop_time ?? 'Live shift',
-      priority: worker.status === 'emergency' ? 'Critical' : 'Medium',
+      deadline: checkpointDeadline,
+      priority,
       temperatureC: environment?.avg_suhu ?? null,
       humidityPct: environment?.avg_kelembaban ?? null,
       workload: worker.workload,
       notes: environment
-        ? `Supabase IoT: ${environment.avg_suhu ?? '-'}C, ${environment.avg_kelembaban ?? '-'}% humidity, ${environment.avg_tekanan ?? '-'} hPa.`
+        ? `Supabase IoT rows: work_hours=${workHour?.id ?? 'none'}, environment_condition=${environment.id}. ${environment.avg_suhu ?? '-'}C, ${environment.avg_kelembaban ?? '-'}% humidity, ${environment.avg_tekanan ?? '-'} hPa.`
         : 'Supabase IoT tables are connected; waiting for environment_condition rows.',
+      schedulerRecommendation: makeIoTTaskSchedulerRecommendation(worker, environment, workHour, durationMinutes, priority),
       status: worker.status === 'emergency' ? 'Safety hold' : worker.status === 'working' ? 'In Progress' : 'Open',
-      due: workHour?.stop_reason ?? 'Live',
-      tone: worker.status === 'emergency' ? 'danger' : worker.fatigue >= 65 ? 'warning' : 'neutral'
-    },
-    ...fallbackTasks.slice(1)
+      due: workHour?.stop_reason ?? 'Live checkpoint',
+      tone
+    }
   ];
+}
+
+function makeIoTTaskSchedulerRecommendation(
+  worker: Worker,
+  environment: IoTEnvironmentConditionRow | null,
+  workHour: IoTWorkHoursRow | null,
+  durationMinutes: number,
+  priority: string
+): SchedulerRecommendation {
+  const urgent = priority === 'Critical' || priority === 'High';
+  const totalWorkerHours = Math.max(0.25, durationMinutes / 60);
+  const fatigueDrag = Math.max(0.45, 1 - worker.fatigue / 150);
+  const environmentDrag = Number(environment?.avg_suhu ?? 0) >= 32 || Number(environment?.avg_kelembaban ?? 0) >= 80 ? 0.82 : 1;
+  const productivity = Math.max(0.4, 1.8 * fatigueDrag * environmentDrag);
+  const forecastValues = [0.92, 1, urgent ? 0.88 : 1.05, urgent ? 0.84 : 1.08].map((multiplier) =>
+    Math.round(productivity * multiplier * 100) / 100
+  );
+  const stopReason = normalizeWarningEvent(workHour?.stop_reason);
+  const safetyWarnings = [
+    worker.fatigue >= 65 ? `Worker fatigue is ${worker.fatigue}%.` : null,
+    environment && Number(environment.avg_suhu ?? 0) >= 32 ? `Temperature is ${environment.avg_suhu}C.` : null,
+    environment && Number(environment.avg_kelembaban ?? 0) >= 80 ? `Humidity is ${environment.avg_kelembaban}%.` : null,
+    ['SOS', 'JATUH', 'TIDAK BERGERAK'].includes(stopReason) ? `Work stopped by ${stopReason}.` : null
+  ].filter((warning): warning is string => Boolean(warning));
+
+  return {
+    totalWorkerHours,
+    recommendedWorkerCount: urgent ? 2 : 1,
+    recommendedCrewSize: urgent ? 2 : 1,
+    estimatedTaskDuration: formatDurationLabel(durationMinutes * 60),
+    estimatedDuration: formatDurationLabel(durationMinutes * 60),
+    recommendedStartTime: workHour?.start_time ? `Started ${formatTimestampForOps(workHour.start_time)}` : 'Waiting for work_hours start_time',
+    estimatedCompletionTime: workHour?.stop_time ? `Stopped ${formatTimestampForOps(workHour.stop_time)}` : 'Live checkpoint in progress',
+    estimatedFinishTime: workHour?.stop_time ? `Stopped ${formatTimestampForOps(workHour.stop_time)}` : 'Live checkpoint in progress',
+    predictedWorkload: worker.workload === 'High' ? 'High' : worker.workload === 'Medium' ? 'Medium' : 'Low',
+    selectedWorkerRecommendations: [
+      {
+        workerId: worker.id,
+        workerName: worker.name,
+        explanation: `Assigned from worker@gmail.com IoT stream with ${durationMinutes} minutes captured in work_hours.`
+      }
+    ],
+    assignmentEngineVersion: 'iot-supabase-task-adapter-v1',
+    expectedProductivityRate: `${productivity.toFixed(2)} minutes/worker-hour adjusted by fatigue and environment`,
+    deadlineFeasibilityStatus: urgent ? 'Supervisor review required from live IoT signal' : 'On track under current IoT signal',
+    capacityEstimatorVersion: 'iot-live-capacity-v1',
+    requiredPpeAndCertifications: ['Helmet', 'Harness', 'Safety shoes'],
+    dependencyStatus: workHour ? `Bound to Supabase work_hours row ${workHour.id}.` : 'Waiting for Supabase work_hours row.',
+    currentEnvironmentalConditions: environment
+      ? `Supabase environment_condition row ${environment.id}: ${environment.avg_suhu ?? '-'}C, ${environment.avg_kelembaban ?? '-'}% humidity, ${environment.avg_tekanan ?? '-'} hPa.`
+      : 'No environment_condition row available yet.',
+    safetyAndOperationalWarnings: safetyWarnings.length ? safetyWarnings : ['No active IoT safety warning for this live task.'],
+    chronosForecast: {
+      futureProductivity: `${forecastValues[1].toFixed(2)} minutes/worker-hour`,
+      delayPrediction: urgent
+        ? 'IoT signal indicates elevated risk; supervisor should verify before continuing.'
+        : 'IoT signal indicates normal productivity for this live field operation.',
+      suggestedAdditionalCrew: urgent ? 1 : 0,
+      forecastVersion: 'iot-derived-chronos-context-v1',
+      confidence: workHour && environment ? 'INFERRED' : 'COLD_START',
+      model: 'supabase-iot-derived',
+      modelStatus: 'READY',
+      forecastValues
+    },
+    schedulerStatus: 'Generated from live Supabase IoT tables: work_hours, environment_condition, warning, and worker fatigue state.'
+  };
 }
 
 function applyIoTTaskProofs(tasks: Task[]) {
@@ -1238,9 +1374,10 @@ function applyIoTTaskProofs(tasks: Task[]) {
   });
 }
 
-function createSupabaseIoTStubTask(input: CreateTaskInput): Task {
+async function createSupabaseIoTStubTask(input: CreateTaskInput, workers: Worker[]): Promise<Task> {
   const workload = inferWorkload(input.taskTemplate, input.quantity);
   const base = fallbackTasks[0];
+  const schedulerRecommendation = await makeSchedulerRecommendation({ ...input, workload }, workers.length ? workers : fallbackWorkers, null);
 
   return {
     ...base,
@@ -1259,6 +1396,7 @@ function createSupabaseIoTStubTask(input: CreateTaskInput): Task {
     humidityPct: null,
     workload,
     notes: input.notes ?? 'Supabase IoT mode stub; create a tasks table later to persist this.',
+    schedulerRecommendation,
     status: 'Open',
     due: input.deadline,
     tone: input.priority === 'Critical' ? 'danger' : input.priority === 'High' ? 'warning' : 'neutral'
@@ -1572,6 +1710,28 @@ function formatDurationClock(seconds?: number | null) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${hours}:${String(minutes).padStart(2, '0')}`;
+}
+
+function formatDurationLabel(seconds?: number | null) {
+  const totalMinutes = Math.max(1, Math.round((seconds ?? 0) / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours && minutes) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return hours ? `${hours}h` : `${minutes}m`;
+}
+
+function formatTimestampForOps(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return formatTime(date);
 }
 
 function makeSupabaseEnvelope(device: SupabaseDeviceRow, eventType: string, payload: Record<string, unknown>) {
@@ -2043,6 +2203,6 @@ function isImageDataUrl(value: string) {
 
 export const supabaseFallbackData: WorkforceData = {
   workers: fallbackWorkers,
-  tasks: fallbackTasks,
+  tasks: [],
   notifications: fallbackNotifications
 };

@@ -406,9 +406,10 @@ const server = Bun.serve({
 
     if (request.method === 'PATCH' && autoAssignTaskMatch) {
       try {
+        const body = await request.json().catch(() => ({})) as { workerId?: string };
         const task = useSupabase
-          ? await autoAssignSupabaseTask(autoAssignTaskMatch[1])
-          : await autoAssignTask(autoAssignTaskMatch[1]);
+          ? await autoAssignSupabaseTask(autoAssignTaskMatch[1], body.workerId)
+          : await autoAssignTask(autoAssignTaskMatch[1], body.workerId);
         return task ? jsonResponse(task) : jsonResponse({ error: 'Task not found' }, { status: 404 });
       } catch (error) {
         return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to assign task' }, { status: 409 });

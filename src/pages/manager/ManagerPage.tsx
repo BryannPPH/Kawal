@@ -277,7 +277,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     }
 
     if (activeSection === 'tasks') {
-      return <TasksView tasks={tasks} onAutoAssign={autoAssignTask} onReviewCompletion={reviewTaskCompletion} />;
+      return <TasksView tasks={tasks} workers={workers} onAutoAssign={autoAssignTask} onReviewCompletion={reviewTaskCompletion} />;
     }
 
     if (activeSection === 'payroll') {

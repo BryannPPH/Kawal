@@ -26,8 +26,40 @@ export class ChronosServiceError extends Error {
 
 const chronosApiUrl = process.env.CHRONOS_API_URL ?? 'http://127.0.0.1:8001';
 const chronosRequestTimeoutMs = Number(process.env.CHRONOS_REQUEST_TIMEOUT_MS ?? 3000);
+const forecastCache = new Map<string, Promise<ChronosForecastOutput>>();
+const maxForecastCacheEntries = 100;
 
-export async function forecastProductivity(input: ChronosForecastInput): Promise<ChronosForecastOutput> {
+export function forecastProductivity(input: ChronosForecastInput): Promise<ChronosForecastOutput> {
+  const normalizedInput: ChronosForecastInput = {
+    historicalCompletedQuantity: input.historicalCompletedQuantity.map((value) => Math.max(0, Number(value) || 0)),
+    workerHours: input.workerHours.map((value) => Math.max(0.1, Number(value) || 0.1)),
+    breakMinutes: input.breakMinutes.map((value) => Math.max(0, Number(value) || 0)),
+    activeWorkers: input.activeWorkers.map((value) => Math.max(1, Number(value) || 1)),
+    predictionLength: input.predictionLength ?? 4
+  };
+  const cacheKey = JSON.stringify(normalizedInput);
+  const cachedForecast = forecastCache.get(cacheKey);
+
+  if (cachedForecast) {
+    return cachedForecast;
+  }
+
+  const forecastRequest = requestForecast(normalizedInput).catch((error) => {
+    forecastCache.delete(cacheKey);
+    throw error;
+  });
+
+  forecastCache.set(cacheKey, forecastRequest);
+
+  if (forecastCache.size > maxForecastCacheEntries) {
+    const oldestKey = forecastCache.keys().next().value;
+    if (oldestKey) forecastCache.delete(oldestKey);
+  }
+
+  return forecastRequest;
+}
+
+async function requestForecast(input: ChronosForecastInput): Promise<ChronosForecastOutput> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), chronosRequestTimeoutMs);
 
@@ -65,7 +97,7 @@ export async function forecastProductivity(input: ChronosForecastInput): Promise
     forecastVersion: 'chronos-2-fastapi-v1',
     confidence: normalizeConfidence(payload.confidence),
     model: String(payload.model ?? 'amazon/chronos-2'),
-    modelStatus: 'READY',
+    modelStatus: normalizeModelStatus(payload.modelStatus),
     forecastValues: Array.isArray(payload.forecastValues) ? payload.forecastValues.map(Number) : []
   };
 }
@@ -85,4 +117,8 @@ export function chronosUnavailableForecast(reason: string): ChronosForecastOutpu
 
 function normalizeConfidence(value: unknown): ChronosForecastOutput['confidence'] {
   return value === 'HISTORICAL' || value === 'INFERRED' || value === 'COLD_START' ? value : 'INFERRED';
+}
+
+function normalizeModelStatus(value: unknown): ChronosForecastOutput['modelStatus'] {
+  return value === 'UNAVAILABLE' ? 'UNAVAILABLE' : 'READY';
 }
