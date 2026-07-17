@@ -55,8 +55,10 @@ export function IoTView() {
   }, []);
 
   const activeIncidents = center.activeIncidents.length ? center.activeIncidents : overview.activeIncidents;
+  const pendingRestRequests = overview.restRequests.filter((request) => isPendingRestRequest(request.status));
+  const decidedRestRequests = overview.restRequests.filter((request) => !isPendingRestRequest(request.status));
   const onlineDevices = overview.devices.filter((device) => device.status === 'ONLINE').length;
-  const signalCount = activeIncidents.length + overview.restRequests.length;
+  const signalCount = activeIncidents.length + pendingRestRequests.length;
   const connectionPct = overview.devices.length ? Math.round((onlineDevices / overview.devices.length) * 100) : 0;
 
   const updateIncident = async (incidentId: string, action: 'acknowledge' | 'escalate' | 'resolve') => {
@@ -88,9 +90,10 @@ export function IoTView() {
         headers: action === 'reject' ? { 'Content-Type': 'application/json' } : undefined,
         body: action === 'reject' ? JSON.stringify({ reason: 'Manager rejected rest request from IoT panel.' }) : undefined
       });
+      const payload = (await response.json()) as { error?: string };
 
       if (!response.ok) {
-        throw new Error(`Rest request action failed (${response.status})`);
+        throw new Error(payload.error ?? `Rest request action failed (${response.status})`);
       }
 
       await loadOverview();
@@ -123,7 +126,7 @@ export function IoTView() {
           <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-6 xl:border-l xl:border-t-0">
             <div className="flex items-center justify-between gap-4">
               <SignalBubble label="SOS" value={activeIncidents.length} tone="danger" />
-              <SignalBubble label="Rest" value={overview.restRequests.length} tone="warning" />
+              <SignalBubble label="Rest" value={pendingRestRequests.length} tone="warning" />
               <SignalBubble label="Quiet" value={Math.max(overview.devices.length - signalCount, 0)} tone="neutral" />
             </div>
             <div className="mt-6">
@@ -157,9 +160,9 @@ export function IoTView() {
         <StatusTile
           icon={TimerReset}
           label="Rest Request"
-          value={String(overview.restRequests.length)}
+          value={String(pendingRestRequests.length)}
           detail="Wearable break requests"
-          tone={overview.restRequests.length ? 'warning' : 'neutral'}
+          tone={pendingRestRequests.length ? 'warning' : 'neutral'}
         />
         <StatusTile icon={AlertTriangle} label="Offline IoT" value={String(overview.devices.length - onlineDevices)} detail="Assigned devices needing check" tone={onlineDevices === overview.devices.length ? 'success' : 'warning'} />
       </section>
@@ -200,11 +203,11 @@ export function IoTView() {
           <div className="rounded-2xl bg-[#FFF8F4] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-[#2F2C2A]">Rest Requests</p>
-              <Pill className={overview.restRequests.length ? 'bg-[#FFF4DC] text-[#8A4B02]' : 'bg-white text-[#776B63]'}>{overview.restRequests.length} requests</Pill>
+              <Pill className={pendingRestRequests.length ? 'bg-[#FFF4DC] text-[#8A4B02]' : 'bg-white text-[#776B63]'}>{pendingRestRequests.length} pending</Pill>
             </div>
             <div className="space-y-3">
-              {overview.restRequests.length ? (
-                overview.restRequests.slice(0, 5).map((request) => (
+              {pendingRestRequests.length ? (
+                pendingRestRequests.slice(0, 5).map((request) => (
                   <RestRequestCard
                     key={request.id}
                     request={request}
@@ -216,6 +219,16 @@ export function IoTView() {
                 <EmptyState text="No active rest requests." />
               )}
             </div>
+            {decidedRestRequests.length ? (
+              <div className="mt-4 border-t border-[#F3D7C8] pt-4">
+                <p className="mb-3 text-xs font-semibold uppercase text-[#A09188]">Recent decisions</p>
+                <div className="space-y-2">
+                  {decidedRestRequests.slice(0, 3).map((request) => (
+                    <RestDecisionRow key={request.id} request={request} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -400,9 +413,25 @@ function RestRequestCard({
   );
 }
 
+function RestDecisionRow({ request }: { request: RestRequest }) {
+  const approved = normalizeRestRequestStatus(request.status) === 'APPROVED';
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-[#2F2C2A]">{request.worker_id}</p>
+        <p className="mt-1 text-xs text-[#776B63]">{formatTime(request.requested_at)} / rest_break #{request.id.replace('iot-rest-', '')}</p>
+      </div>
+      <Pill className={approved ? 'bg-[#EAF5ED] text-[#3F7A54]' : 'bg-[#FFEFE6] text-[#B84011]'}>
+        {approved ? 'Approved' : 'Rejected'}
+      </Pill>
+    </div>
+  );
+}
+
 function WorkerSignalCard({ device, overview, activeIncidents }: { device: IoTDevice; overview: IoTOverview; activeIncidents: IoTIncident[] }) {
   const sos = activeIncidents.find((incident) => incident.device_id === device.id);
-  const rest = overview.restRequests.find((request) => request.device_id === device.id);
+  const rest = overview.restRequests.find((request) => request.device_id === device.id && isPendingRestRequest(request.status));
   const hasSignal = Boolean(sos || rest);
   const cardTone = sos ? 'border-[#FD7124] bg-[#FFF8F4]' : rest ? 'border-[#F5CC87] bg-[#FFFDF8]' : 'border-[#F3D7C8] bg-white';
   const statusLabel = sos ? 'SOS active' : rest ? 'Rest requested' : 'Clear';
@@ -486,4 +515,13 @@ function formatTime(value: string) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(new Date(value));
+}
+
+function normalizeRestRequestStatus(status: string) {
+  const normalized = status.trim().toUpperCase();
+  return normalized === 'MANAGER_APPROVED' || normalized === 'AUTO_APPROVED' ? 'APPROVED' : normalized;
+}
+
+function isPendingRestRequest(status: string) {
+  return normalizeRestRequestStatus(status) === 'PENDING';
 }

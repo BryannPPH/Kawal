@@ -20,6 +20,8 @@ SUPABASE_SCHEMA=public
 | `work_hours` | Worker live status, duration, fatigue, current field task | Parent work session. `id` is referenced by `inactivity_log.work_hours_id` and `rest_break.work_hours_id`. |
 | `inactivity_log` | No-movement alerts, near-miss reports, fatigue load | Child of `work_hours` through `work_hours_id`. |
 | `rest_break` | Rest request/pending break, worker break status, manager rest queue | Child of `work_hours` through `work_hours_id`. |
+
+`rest_break.status` is the manager decision contract: `PENDING` appears in the active queue, `APPROVED` starts the worker break state, and `REJECTED` closes the request without starting a break.
 | `warning` | SOS/fall/no-movement incidents, notification bell, Incident Center | Event stream. No FK in the current table, so it is linked by time to the latest active worker/session stub. |
 
 ## Stubbed Until App Tables Exist

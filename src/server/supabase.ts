@@ -1,6 +1,6 @@
 import { notifications as fallbackNotifications, tasks as fallbackTasks, workers as fallbackWorkers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
-import type { IoTDevice, IncidentCenterData, IoTIncident, IoTOverview } from '../types/iot';
+import type { IoTDevice, IncidentCenterData, IoTIncident, IoTOverview, RestRequest } from '../types/iot';
 import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
 import { estimateCapacity, inferWorkload } from './capacityEstimator';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
@@ -328,6 +328,41 @@ export async function getSupabaseIoTOverview(): Promise<IoTOverview> {
     commands,
     latestRisk
   };
+}
+
+export async function getSupabaseRestRequests(): Promise<RestRequest[]> {
+  if (shouldUseSupabaseIoTModel()) {
+    return (await getSupabaseIoTSnapshot()).restRequests;
+  }
+
+  return selectRows<RestRequest>('rest_requests', 'select=*&order=requested_at.desc');
+}
+
+export async function getSupabaseRestRequest(requestId: string): Promise<RestRequest | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    const rowId = normalizeIoTRestBreakId(requestId);
+    const [row] = await selectRows<IoTRestBreakRow>('rest_break', `select=*&id=eq.${encodeFilterValue(rowId)}&limit=1`);
+    return row ? mapIoTRestRequest(row, makeFallbackIoTWorker()) : null;
+  }
+
+  const [request] = await selectRows<RestRequest>('rest_requests', `select=*&id=eq.${encodeFilterValue(requestId)}&limit=1`);
+  return request ?? null;
+}
+
+export async function approveSupabaseRestRequest(requestId: string): Promise<RestRequest | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    return decideSupabaseIoTRestBreak(requestId, 'APPROVED');
+  }
+
+  return decideSupabaseWorkforceRestRequest(requestId, 'APPROVED', 'Manager approved rest request');
+}
+
+export async function rejectSupabaseRestRequest(requestId: string, reason: string): Promise<RestRequest | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    return decideSupabaseIoTRestBreak(requestId, 'REJECTED', reason);
+  }
+
+  return decideSupabaseWorkforceRestRequest(requestId, 'REJECTED', reason);
 }
 
 export async function listSupabaseDevices(): Promise<IoTDevice[]> {
@@ -1132,16 +1167,17 @@ async function getSupabaseDeviceForWorker(workerId: string) {
 async function getSupabaseIoTWorkerAppData(workerId: string) {
   const snapshot = await getSupabaseIoTSnapshot();
   const worker = snapshot.workers.find((item) => item.id === workerId) ?? snapshot.workers[0] ?? null;
+  const approvedBreak = snapshot.restBreaks.find((row) => normalizeRestBreakStatus(row.status) === 'APPROVED') ?? null;
 
   return {
     worker,
     tasks: worker ? snapshot.tasks.filter((task) => task.owner === worker.name || task.owner === 'Unassigned') : snapshot.tasks,
     notifications: snapshot.notifications.filter((notification) => !notification.targetWorkerId || notification.targetWorkerId === workerId),
-    currentBreak: snapshot.restBreaks[0] ? {
-      id: `iot-rest-${snapshot.restBreaks[0].id}`,
-      status: snapshot.restBreaks[0].status ?? 'PENDING',
-      plannedMinutes: Math.max(5, Math.round((snapshot.restBreaks[0].work_duration_before_break ?? 0) / 60)),
-      startedAt: snapshot.restBreaks[0].created_at,
+    currentBreak: approvedBreak ? {
+      id: `iot-rest-${approvedBreak.id}`,
+      status: 'BREAK_ACTIVE',
+      plannedMinutes: 10,
+      startedAt: approvedBreak.created_at,
       endsAt: null
     } : null,
     latestRisk: snapshot.latestRisk[0] ?? null,
@@ -1188,7 +1224,7 @@ async function loadSupabaseIoTSnapshot() {
   const latestWorkHour = workHourRows[0] ?? null;
   const latestClearWarning = warningRows.find((row) => isWorkerClearedWarning(row)) ?? null;
   const latestWarning = warningRows.find((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning)) ?? null;
-  const activeRestBreak = restBreakRows.find((row) => (row.status ?? '').toUpperCase() === 'PENDING') ?? restBreakRows[0] ?? null;
+  const activeRestBreak = restBreakRows.find((row) => normalizeRestBreakStatus(row.status) === 'APPROVED') ?? null;
   const primaryWorker = makeIoTWorker(latestWorkHour, latestWarning, activeRestBreak, inactivityRows[0] ?? null, latestEnvironment);
   const workers = [
     primaryWorker,
@@ -1559,13 +1595,16 @@ function makeIoTNotifications(
     createdAt: row.created_at,
     read: false
   }));
-  const restNotifications = restBreakRows.slice(0, 4).map((row) => ({
-    id: `iot-rest-${row.id}`,
-    title: 'Rest break signal',
-    detail: `Rest break ${row.status ?? 'PENDING'} after ${row.work_duration_before_break ?? 0} seconds of work.`,
+  const restNotifications = restBreakRows
+    .filter((row) => normalizeRestBreakStatus(row.status) === 'PENDING')
+    .slice(0, 8)
+    .map((row) => ({
+    id: `iot-rest-request-${row.id}`,
+    title: 'Rest approval requested',
+    detail: `${worker.name} requested a break after ${row.work_duration_before_break ?? 0} seconds of work. Approve or reject request #${row.id}.`,
     tone: 'warning' as Tone,
-    targetLabel: 'Review rest',
-    targetSection: 'workers' as ManagerSection,
+    targetLabel: 'Review request',
+    targetSection: 'iot' as ManagerSection,
     targetWorkerId: worker.id,
     createdAt: row.created_at,
     read: false
@@ -1660,6 +1699,10 @@ function applyIoTIncidentStateOverride(incident: IoTIncident): IoTIncident {
 }
 
 function mapIoTRestRequest(row: IoTRestBreakRow, worker: Worker) {
+  const status = normalizeRestBreakStatus(row.status);
+  const approved = status === 'APPROVED';
+  const rejected = status === 'REJECTED';
+
   return {
     id: `iot-rest-${row.id}`,
     worker_id: worker.id,
@@ -1667,14 +1710,104 @@ function mapIoTRestRequest(row: IoTRestBreakRow, worker: Worker) {
     task_id: 'iot-live-shift',
     zone_id: worker.zone,
     source: 'SUPABASE_REST_BREAK',
-    status: row.status ?? 'PENDING',
+    status,
     requested_at: row.created_at,
     risk_score_at_request: Math.min(100, Math.round((row.work_duration_before_break ?? 0) / 60)),
     fatigue_score_at_request: worker.fatigue,
-    decision: null,
-    decision_reason: null,
+    decision: approved ? 'APPROVED' : rejected ? 'REJECTED' : null,
+    decision_reason: approved ? 'Manager approved rest request' : rejected ? 'Manager rejected rest request' : null,
     break_session_id: null
   };
+}
+
+async function decideSupabaseIoTRestBreak(
+  requestId: string,
+  decision: 'APPROVED' | 'REJECTED',
+  reason = decision === 'APPROVED' ? 'Manager approved rest request' : 'Manager rejected rest request'
+): Promise<RestRequest | null> {
+  const rowId = normalizeIoTRestBreakId(requestId);
+  const [existing] = await selectRows<IoTRestBreakRow>('rest_break', `select=*&id=eq.${encodeFilterValue(rowId)}&limit=1`);
+
+  if (!existing) {
+    return null;
+  }
+
+  const currentStatus = normalizeRestBreakStatus(existing.status);
+
+  if (currentStatus !== 'PENDING') {
+    return mapIoTRestRequest(existing, makeFallbackIoTWorker());
+  }
+
+  const [updated] = await patchRows<IoTRestBreakRow>('rest_break', `id=eq.${encodeFilterValue(rowId)}`, {
+    status: decision
+  });
+
+  if (!updated) {
+    return null;
+  }
+
+  const worker = makeFallbackIoTWorker();
+  addRuntimeNotification({
+    id: `iot-rest-decision-${updated.id}-${decision.toLowerCase()}`,
+    title: decision === 'APPROVED' ? 'Rest request approved' : 'Rest request rejected',
+    detail: decision === 'APPROVED'
+      ? `Manager approved a 10 minute rest break after ${updated.work_duration_before_break ?? 0} seconds of work.`
+      : reason,
+    tone: decision === 'APPROVED' ? 'success' : 'warning',
+    targetLabel: 'Open rest status',
+    targetSection: 'workers',
+    targetWorkerId: worker.id,
+    createdAt: new Date().toISOString(),
+    read: false
+  });
+
+  return {
+    ...mapIoTRestRequest(updated, worker),
+    decision_reason: reason
+  };
+}
+
+async function decideSupabaseWorkforceRestRequest(
+  requestId: string,
+  decision: 'APPROVED' | 'REJECTED',
+  reason: string
+): Promise<RestRequest | null> {
+  const [existing] = await selectRows<RestRequest>('rest_requests', `select=*&id=eq.${encodeFilterValue(requestId)}&limit=1`);
+
+  if (!existing) {
+    return null;
+  }
+
+  if (normalizeRestBreakStatus(existing.status) !== 'PENDING') {
+    return existing;
+  }
+
+  const [updated] = await patchRows<RestRequest>('rest_requests', `id=eq.${encodeFilterValue(requestId)}`, {
+    status: decision === 'APPROVED' ? 'MANAGER_APPROVED' : 'REJECTED',
+    decision,
+    decision_reason: reason,
+    decided_by: 'manager-demo',
+    decided_at: new Date().toISOString()
+  });
+
+  return updated ?? null;
+}
+
+function normalizeIoTRestBreakId(requestId: string) {
+  return decodeURIComponent(requestId).replace(/^iot-rest-/, '');
+}
+
+function normalizeRestBreakStatus(status?: string | null) {
+  const normalized = (status ?? 'PENDING').trim().toUpperCase();
+  return normalized === 'MANAGER_APPROVED' || normalized === 'AUTO_APPROVED' ? 'APPROVED' : normalized;
+}
+
+function makeFallbackIoTWorker() {
+  return {
+    ...fallbackWorkers[0],
+    id: fallbackWorkers[0]?.id ?? 'budi',
+    name: fallbackWorkers[0]?.name ?? 'Budi Santoso'
+  } as Worker;
 }
 
 function mapIoTInactivityNearMiss(row: IoTInactivityLogRow, worker: Worker) {
@@ -1893,27 +2026,43 @@ async function selectRows<T>(tableName: string, query: string): Promise<T[]> {
 }
 
 async function insertRows<T>(tableName: string, rows: Array<Record<string, unknown>>): Promise<T[]> {
-  return supabaseRequest<T[]>(tableName, '', {
+  const inserted = await supabaseRequest<T[]>(tableName, '', {
     method: 'POST',
     body: JSON.stringify(rows),
     prefer: 'return=representation'
   });
+  invalidateSupabaseTableCache(tableName);
+  return inserted;
 }
 
 async function upsertRows<T>(tableName: string, rows: Array<Record<string, unknown>>, onConflict: string): Promise<T[]> {
-  return supabaseRequest<T[]>(tableName, `on_conflict=${encodeURIComponent(onConflict)}`, {
+  const upserted = await supabaseRequest<T[]>(tableName, `on_conflict=${encodeURIComponent(onConflict)}`, {
     method: 'POST',
     body: JSON.stringify(rows),
     prefer: 'resolution=merge-duplicates,return=representation'
   });
+  invalidateSupabaseTableCache(tableName);
+  return upserted;
 }
 
 async function patchRows<T>(tableName: string, query: string, body: Record<string, unknown>): Promise<T[]> {
-  return supabaseRequest<T[]>(tableName, query, {
+  const updated = await supabaseRequest<T[]>(tableName, query, {
     method: 'PATCH',
     body: JSON.stringify(body),
     prefer: 'return=representation'
   });
+  invalidateSupabaseTableCache(tableName);
+  return updated;
+}
+
+function invalidateSupabaseTableCache(tableName: string) {
+  for (const cacheKey of supabaseReadCache.keys()) {
+    if (cacheKey.startsWith(`${tableName}?`)) {
+      supabaseReadCache.delete(cacheKey);
+    }
+  }
+
+  cachedIoTSnapshot = null;
 }
 
 async function supabaseRequest<T>(
@@ -1925,7 +2074,7 @@ async function supabaseRequest<T>(
 
   const separator = query ? `?${query}` : '';
   const method = init.method ?? 'GET';
-  const maxAttempts = method === 'GET' ? 2 : 1;
+  const maxAttempts = method === 'GET' || method === 'PATCH' ? 2 : 1;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {

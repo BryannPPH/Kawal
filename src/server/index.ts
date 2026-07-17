@@ -42,6 +42,8 @@ import {
   getSupabaseIncidentCenter,
   getSupabaseIoTOverview,
   getSupabaseNotifications,
+  getSupabaseRestRequest,
+  getSupabaseRestRequests,
   getSupabaseTasks,
   getSupabaseUsers,
   getSupabaseWorkerAppData,
@@ -50,6 +52,8 @@ import {
   ingestSupabaseIoTMessage,
   listSupabaseDevices,
   markSupabaseNotificationRead,
+  approveSupabaseRestRequest,
+  rejectSupabaseRestRequest,
   completeSupabaseWorkerAssignment,
   performSupabaseWorkerPpeCheck,
   getSupabaseWorkerRestRecommendation,
@@ -532,21 +536,29 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/rest-requests') {
-      return jsonResponse(getRestRequests());
+      return jsonResponse(useSupabase ? await getSupabaseRestRequests() : getRestRequests());
     }
 
     const restRequestMatch = url.pathname.match(/^\/api\/rest-requests\/([^/]+)$/);
 
     if (request.method === 'GET' && restRequestMatch) {
-      const restRequest = getRestRequest(restRequestMatch[1]);
+      const restRequest = useSupabase
+        ? await getSupabaseRestRequest(restRequestMatch[1])
+        : getRestRequest(restRequestMatch[1]);
       return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
     }
 
     const restApproveMatch = url.pathname.match(/^\/api\/rest-requests\/([^/]+)\/approve$/);
 
     if (request.method === 'POST' && restApproveMatch) {
-      const restRequest = approveRestRequest(restApproveMatch[1]);
-      return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+      try {
+        const restRequest = useSupabase
+          ? await approveSupabaseRestRequest(restApproveMatch[1])
+          : approveRestRequest(restApproveMatch[1]);
+        return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to approve rest request' }, { status: 502 });
+      }
     }
 
     const restRejectMatch = url.pathname.match(/^\/api\/rest-requests\/([^/]+)\/reject$/);
@@ -558,8 +570,14 @@ const server = Bun.serve({
         return jsonResponse({ error: 'Rejection reason is required' }, { status: 400 });
       }
 
-      const restRequest = rejectRestRequest(restRejectMatch[1], body.reason);
-      return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+      try {
+        const restRequest = useSupabase
+          ? await rejectSupabaseRestRequest(restRejectMatch[1], body.reason)
+          : rejectRestRequest(restRejectMatch[1], body.reason);
+        return restRequest ? jsonResponse(restRequest) : jsonResponse({ error: 'Rest request not found' }, { status: 404 });
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to reject rest request' }, { status: 502 });
+      }
     }
 
     const workerBreakMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/break\/current$/);
