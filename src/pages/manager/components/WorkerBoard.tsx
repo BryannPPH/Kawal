@@ -7,9 +7,10 @@ type WorkerBoardProps = {
   workers: Worker[];
   selectedWorker: Worker;
   onSelectWorker: (worker: Worker) => void;
+  onOpenDetails?: (worker: Worker) => void;
 };
 
-export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerBoardProps) {
+export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDetails }: WorkerBoardProps) {
   const [filter, setFilter] = useState<WorkerStatus | 'all'>('all');
   const visibleWorkers = useMemo(() => workers.filter((worker) => filter === 'all' || worker.status === filter), [filter]);
   const statusSummary = (['working', 'waiting', 'break', 'done'] as const).map((status) => ({
@@ -66,7 +67,13 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerB
 
       <div className="mt-6 grid gap-4">
         {visibleWorkers.map((worker) => (
-          <WorkerRow key={worker.id} worker={worker} selected={selectedWorker.id === worker.id} onSelect={onSelectWorker} />
+          <WorkerRow
+            key={worker.id}
+            worker={worker}
+            selected={selectedWorker.id === worker.id}
+            onSelect={onSelectWorker}
+            onOpenDetails={onOpenDetails}
+          />
         ))}
       </div>
     </section>
