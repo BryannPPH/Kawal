@@ -22,6 +22,8 @@ SUPABASE_SCHEMA=public
 | `rest_break` | Rest request/pending break, worker break status, manager rest queue | Child of `work_hours` through `work_hours_id`. |
 
 `rest_break.status` is the manager decision contract: `PENDING` appears in the active queue, `APPROVED` starts the worker break state, and `REJECTED` closes the request without starting a break.
+
+The Bun backend needs `SELECT, UPDATE` privileges as `service_role`. Run `docs/supabase-rest-break-permissions.sql` once from the Supabase SQL Editor; do not expose `UPDATE` to the browser `anon` role.
 | `warning` | SOS/fall/no-movement incidents, notification bell, Incident Center | Event stream. No FK in the current table, so it is linked by time to the latest active worker/session stub. |
 
 ## Stubbed Until App Tables Exist
