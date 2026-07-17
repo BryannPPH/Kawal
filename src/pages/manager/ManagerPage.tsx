@@ -10,7 +10,6 @@ import { formatNotificationRelativeTime, sortNotificationsNewestFirst } from '..
 import type { ManagerSection } from '../../types/navigation';
 import { ManagerSidebar } from './components/ManagerSidebar';
 import { DashboardView } from './views/DashboardView';
-import { IncidentCenterView } from './views/IncidentCenterView';
 import { IoTView } from './views/IoTView';
 import { NotificationsView } from './views/NotificationsView';
 import { PayrollView } from './views/PayrollView';
@@ -141,8 +140,9 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   }, []);
 
   const selectSection = (section: ManagerSection) => {
-    window.history.pushState({}, '', managerSectionMeta[section].path);
-    setActiveSection(section);
+    const nextSection = section === 'incidents' ? 'iot' : section;
+    window.history.pushState({}, '', managerSectionMeta[nextSection].path);
+    setActiveSection(nextSection);
     setAlertsOpen(false);
   };
 
@@ -285,10 +285,6 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
 
     if (activeSection === 'iot') {
       return <IoTView />;
-    }
-
-    if (activeSection === 'incidents') {
-      return <IncidentCenterView />;
     }
 
     return (

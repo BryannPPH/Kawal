@@ -1,6 +1,7 @@
 import { Lock, Mail } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import loginBackground from '../../../assets/background_login.png';
 import kawalLogo from '../../assets/kawal-logo.svg';
 
 type LoginPageProps = {
@@ -28,8 +29,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <section className="grid min-h-screen place-items-center bg-[#F1F2F7] px-4 py-8">
-      <div className="w-full max-w-[430px] rounded-2xl border border-[#F3D7C8] bg-white p-6 shadow-[0_24px_80px_rgba(76,48,35,0.12)]">
+    <section
+      className="relative grid min-h-screen place-items-center overflow-hidden bg-[#F8F7F4] bg-cover bg-center bg-no-repeat px-4 py-8"
+      style={{
+        backgroundImage: `linear-gradient(90deg, rgba(255,255,255,0.78), rgba(255,248,244,0.64)), url(${loginBackground})`
+      }}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-white/28 backdrop-blur-[3px]" />
+      <div className="relative z-10 w-full max-w-[430px] rounded-2xl border border-[#F3D7C8]/80 bg-white/90 p-7 shadow-[0_24px_80px_rgba(76,48,35,0.12)] backdrop-blur-xl sm:p-8">
         <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center">
             <img src={kawalLogo} alt="Kawal logo" className="h-11 w-11 object-contain" />

@@ -16,6 +16,7 @@ type DashboardViewProps = {
 export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, onAutoAssign }: DashboardViewProps) {
   const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
   const workingCount = workers.filter((worker) => worker.status === 'working').length;
   const breakCount = workers.filter((worker) => worker.status === 'break').length;
   const waitingCount = workers.filter((worker) => worker.status === 'waiting').length;
@@ -32,8 +33,12 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
     const unassignedTasks = tasks.filter((task) => task.owner === 'Unassigned');
     return unassignedTasks.find((task) => task.schedulerRecommendation.selectedWorkerRecommendations.length > 0) ?? unassignedTasks[0] ?? null;
   }, [tasks]);
-  const recommendedWorkerId = recommendedTask?.schedulerRecommendation.selectedWorkerRecommendations[0]?.workerId;
-  const recommendedWorker = workers.find((worker) => worker.id === recommendedWorkerId) ?? selectedWorker;
+
+  const selectDashboardWorker = (worker: Worker) => {
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+    onSelectWorker(worker);
+  };
 
   const approveRecommendedAssignment = async () => {
     if (!recommendedTask) {
@@ -42,9 +47,17 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
 
     setAssigningTaskId(recommendedTask.id);
     setAssignmentError(null);
+    setAssignmentSuccess(null);
 
     try {
-      await onAutoAssign(recommendedTask.id);
+      const assignedTask = await onAutoAssign(recommendedTask.id);
+      const assignedWorker = workers.find((worker) => worker.name === assignedTask.owner);
+
+      if (assignedWorker) {
+        onSelectWorker(assignedWorker);
+      }
+
+      setAssignmentSuccess(`${assignedTask.taskTemplate} assigned to ${assignedTask.owner}.`);
     } catch (error) {
       setAssignmentError(error instanceof Error ? error.message : 'Unable to assign task');
     } finally {
@@ -98,14 +111,15 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <AssignmentPanel
-          selectedWorker={recommendedWorker}
+          selectedWorker={selectedWorker}
           task={recommendedTask}
           assigning={Boolean(recommendedTask && assigningTaskId === recommendedTask.id)}
           error={assignmentError}
-          onSelectWorker={onSelectWorker}
+          success={assignmentSuccess}
+          onSelectWorker={selectDashboardWorker}
           onApprove={approveRecommendedAssignment}
         />
-        <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} compact />
+        <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={selectDashboardWorker} compact />
       </section>
     </div>
   );

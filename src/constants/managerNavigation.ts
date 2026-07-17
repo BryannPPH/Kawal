@@ -1,4 +1,4 @@
-import { ClipboardList, LayoutDashboard, Radio, ShieldAlert, Users, WalletCards } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, Radio, Users, WalletCards } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ManagerSection } from '../types/navigation';
 
@@ -15,8 +15,7 @@ export const managerSections = [
   { section: 'workers', title: 'Workers', label: 'Workers', path: '/manager/workers', icon: Users },
   { section: 'tasks', title: 'Tasks', label: 'Tasks', path: '/manager/tasks', icon: ClipboardList },
   { section: 'payroll', title: 'Payroll', label: 'Payroll', path: '/manager/payroll', icon: WalletCards },
-  { section: 'iot', title: 'IoT Panel', label: 'IoT Panel', path: '/manager/iot', icon: Radio },
-  { section: 'incidents', title: 'Incident Center', label: 'Incident Center', path: '/manager/incidents', icon: ShieldAlert }
+  { section: 'iot', title: 'IoT Panel', label: 'IoT Panel', path: '/manager/iot', icon: Radio }
 ] satisfies ManagerSectionMeta[];
 
 export const managerSectionMeta = managerSections.reduce(
@@ -29,6 +28,11 @@ export const managerSectionMeta = managerSections.reduce(
 
 export function getManagerSectionFromPath(pathname: string): ManagerSection {
   const section = pathname.split('/')[2];
+
+  if (section === 'incidents') {
+    return 'iot';
+  }
+
   const match = managerSections.find((item) => item.section === section);
   return match?.section ?? 'dashboard';
 }

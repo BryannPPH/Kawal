@@ -9,11 +9,12 @@ type AssignmentPanelProps = {
   task: Task | null;
   assigning: boolean;
   error: string | null;
+  success: string | null;
   onSelectWorker: (worker: Worker) => void;
   onApprove: () => void;
 };
 
-export function AssignmentPanel({ selectedWorker, task, assigning, error, onSelectWorker, onApprove }: AssignmentPanelProps) {
+export function AssignmentPanel({ selectedWorker, task, assigning, error, success, onSelectWorker, onApprove }: AssignmentPanelProps) {
   return (
     <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -30,6 +31,7 @@ export function AssignmentPanel({ selectedWorker, task, assigning, error, onSele
       </div>
 
       {error ? <p className="mt-4 rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error}</p> : null}
+      {success ? <p className="mt-4 rounded-xl bg-[#EAF5ED] px-3 py-2 text-sm font-semibold text-[#3F7A54]">{success}</p> : null}
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <button
