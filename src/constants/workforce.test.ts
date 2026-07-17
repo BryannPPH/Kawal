@@ -17,8 +17,20 @@ describe('workforce constants', () => {
   });
 
   it('seeds a usable unassigned task queue', () => {
-    expect(tasks.length).toBeGreaterThanOrEqual(12);
+    expect(tasks.length).toBeGreaterThanOrEqual(20);
     expect(tasks.every((task) => task.owner === 'Unassigned' && task.status === 'Open')).toBe(true);
+  });
+
+  it('spreads seeded tasks across an operational week', () => {
+    const deadlineDays = new Set(tasks.map((task) => task.deadline.slice(0, 10)));
+
+    expect(deadlineDays.size).toBeGreaterThanOrEqual(7);
+  });
+
+  it('seeds a varied crew for assignment ranking', () => {
+    expect(workers.length).toBeGreaterThanOrEqual(12);
+    expect(new Set(workers.map((worker) => worker.role)).size).toBeGreaterThanOrEqual(10);
+    expect(new Set(workers.map((worker) => worker.workload)).size).toBe(3);
   });
 
   it('has labels for every worker status in use', () => {

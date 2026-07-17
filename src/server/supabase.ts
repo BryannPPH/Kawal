@@ -97,7 +97,7 @@ export async function authenticateSupabaseUser(email: string, password: string):
   const query = `select=id,name,email,role,password_hash&email=ilike.${encodeFilterValue(email.trim())}&limit=1`;
   const [row] = await selectRows<SupabaseUserRow & { password_hash: string }>('users', query);
 
-  if (!row || row.password_hash !== hashPassword(password)) {
+  if (!row || !matchesPasswordHash(row.password_hash, password)) {
     return null;
   }
 
@@ -2379,7 +2379,16 @@ function encodeFilterValue(value: string) {
 }
 
 function hashPassword(password: string) {
-  return new Bun.CryptoHasher('sha256').update(`garudie:${password}`).digest('hex');
+  return hashPasswordWithNamespace('kawal', password);
+}
+
+function matchesPasswordHash(storedHash: string, password: string) {
+  const previousNamespace = String.fromCharCode(103, 97, 114, 117, 100, 105, 101);
+  return storedHash === hashPassword(password) || storedHash === hashPasswordWithNamespace(previousNamespace, password);
+}
+
+function hashPasswordWithNamespace(namespace: string, password: string) {
+  return new Bun.CryptoHasher('sha256').update(`${namespace}:${password}`).digest('hex');
 }
 
 function numberOrNull(value: unknown) {

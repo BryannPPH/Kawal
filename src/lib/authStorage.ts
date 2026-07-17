@@ -1,7 +1,7 @@
 import type { AuthUser, UserRole } from '../types/navigation';
 
-const authRoleStorageKey = 'garudie-auth-role';
-const authUserStorageKey = 'garudie-auth-user';
+const authRoleStorageKey = 'kawal-auth-role';
+const authUserStorageKey = 'kawal-auth-user';
 
 export function getStoredRole(): UserRole | null {
   const role = localStorage.getItem(authRoleStorageKey);

@@ -167,7 +167,7 @@ create table if not exists device_commands (
   related_incident_id text,
   related_rest_request_id text,
   related_break_session_id text,
-  created_by text not null default 'garudie-api'
+  created_by text not null default 'kawal-api'
 );
 
 create table if not exists rest_requests (

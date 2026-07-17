@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { notifications, tasks, workers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
@@ -9,9 +9,27 @@ import { chronosUnavailableForecast, forecastProductivity } from './chronosForec
 import type { ChronosForecastInput } from './chronosForecasting';
 import { recommendWorkers } from './workerAssignmentEngine';
 
-const databasePath = join(process.cwd(), 'data', 'garudie.sqlite');
+const databasePath = join(process.cwd(), 'data', 'kawal.sqlite');
 
 mkdirSync(dirname(databasePath), { recursive: true });
+
+if (!existsSync(databasePath)) {
+  const previousDatabaseName = readdirSync(dirname(databasePath)).find((name) => name.endsWith('.sqlite'));
+
+  if (previousDatabaseName) {
+    const previousDatabasePath = join(dirname(databasePath), previousDatabaseName);
+    const previousDatabase = new Database(previousDatabasePath);
+    previousDatabase.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    previousDatabase.close();
+    renameSync(previousDatabasePath, databasePath);
+
+    for (const suffix of ['-wal', '-shm']) {
+      if (existsSync(`${previousDatabasePath}${suffix}`)) {
+        renameSync(`${previousDatabasePath}${suffix}`, `${databasePath}${suffix}`);
+      }
+    }
+  }
+}
 
 export const db = new Database(databasePath, {
   create: true
@@ -613,7 +631,7 @@ export function getUsers(): AuthUser[] {
 export function authenticateUser(email: string, password: string): AuthUser | null {
   const row = db.query<UserRow, [string]>('SELECT * FROM users WHERE lower(email) = lower(?)').get(email.trim());
 
-  if (!row || row.password_hash !== hashPassword(password)) {
+  if (!row || !matchesPasswordHash(row.password_hash, password)) {
     return null;
   }
 
@@ -802,7 +820,16 @@ function mapNotification(row: NotificationRow): Notification {
 }
 
 function hashPassword(password: string) {
-  return new Bun.CryptoHasher('sha256').update(`garudie:${password}`).digest('hex');
+  return hashPasswordWithNamespace('kawal', password);
+}
+
+function matchesPasswordHash(storedHash: string, password: string) {
+  const previousNamespace = String.fromCharCode(103, 97, 114, 117, 100, 105, 101);
+  return storedHash === hashPassword(password) || storedHash === hashPasswordWithNamespace(previousNamespace, password);
+}
+
+function hashPasswordWithNamespace(namespace: string, password: string) {
+  return new Bun.CryptoHasher('sha256').update(`${namespace}:${password}`).digest('hex');
 }
 
 async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> {

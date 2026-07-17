@@ -92,7 +92,7 @@ When `DATA_SOURCE=supabase` and `SUPABASE_DATA_MODEL=iot`, the app reads:
 
 ### Local SQLite
 - File: `src/server/database.ts`
-- Database path: `data/garudie.sqlite`
+- Database path: `data/kawal.sqlite`
 - Main app tables:
   - `users`
   - `workers`
@@ -395,4 +395,3 @@ It combines worker mobile workflows, manager dashboards, IoT telemetry, PPE comp
 ```text
 Sense -> Verify -> Assign -> Monitor -> Intervene -> Review -> Learn
 ```
-

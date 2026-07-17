@@ -120,7 +120,7 @@ const server = Bun.serve({
     }
 
     if (request.method === 'GET' && url.pathname === '/api/health') {
-      return jsonResponse({ ok: true, database: getDataSourceName(), service: 'garudie-api' });
+      return jsonResponse({ ok: true, database: getDataSourceName(), service: 'kawal-api' });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/workforce') {
