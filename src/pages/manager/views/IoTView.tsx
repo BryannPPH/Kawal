@@ -109,7 +109,7 @@ export function IoTView() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="text-sm font-semibold text-[#C95119]">IoT Safety Panel</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#2F2C2A]">Worker signals stay simple: rest or SOS.</h2>
+                <h2 className="mt-3 text-3xl font-semibold tracking-normal text-[#2F2C2A]">Live worker alerts, focused on emergency request.</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-[#776B63]">Review rest requests and SOS alerts from each worker&apos;s designated wearable in one queue.</p>
               </div>
               <Button onClick={loadOverview}>
