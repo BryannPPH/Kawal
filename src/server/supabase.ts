@@ -1120,7 +1120,7 @@ async function persistSupabaseRiskEvaluation(envelope: SupabaseEnvelope, receive
       title: `${risk.riskLevel.toLowerCase()} risk detected`,
       detail: `${envelope.workerId} scored ${risk.riskScore}: ${risk.reasons.join(', ')}.`,
       tone: risk.riskLevel === 'CRITICAL' ? 'danger' : 'warning',
-      targetLabel: 'Open IoT panel',
+      targetLabel: 'Open Kawal IoT',
       targetSection: 'iot',
       targetWorkerId: envelope.workerId
     });

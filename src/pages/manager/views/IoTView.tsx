@@ -88,7 +88,7 @@ export function IoTView() {
       const response = await fetch(`/api/rest-requests/${requestId}/${action}`, {
         method: 'POST',
         headers: action === 'reject' ? { 'Content-Type': 'application/json' } : undefined,
-        body: action === 'reject' ? JSON.stringify({ reason: 'Manager rejected rest request from IoT panel.' }) : undefined
+        body: action === 'reject' ? JSON.stringify({ reason: 'Manager rejected rest request from Kawal IoT.' }) : undefined
       });
       const payload = (await response.json()) as { error?: string };
 
