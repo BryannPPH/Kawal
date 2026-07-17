@@ -3,8 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { notifications, tasks, workers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
-import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
-import { estimateCapacity, inferWorkload } from './capacityEstimator';
+import type { Notification, SchedulerRecommendation, Task, TaskIntensity, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
+import { estimateCapacity, inferWorkload, normalizeTaskIntensity } from './capacityEstimator';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
 import type { ChronosForecastInput } from './chronosForecasting';
 import { recommendWorkers } from './workerAssignmentEngine';
@@ -103,6 +103,7 @@ function createTables() {
       unit TEXT NOT NULL DEFAULT '',
       deadline TEXT NOT NULL DEFAULT '',
       priority TEXT NOT NULL DEFAULT '',
+      task_intensity TEXT NOT NULL DEFAULT 'Medium',
       temperature_c REAL,
       humidity_pct REAL,
       task_workload TEXT NOT NULL DEFAULT '',
@@ -361,6 +362,7 @@ function createTables() {
   addColumnIfMissing('tasks', 'unit', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'deadline', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'priority', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tasks', 'task_intensity', "TEXT NOT NULL DEFAULT 'Medium'");
   addColumnIfMissing('tasks', 'temperature_c', 'REAL');
   addColumnIfMissing('tasks', 'humidity_pct', 'REAL');
   addColumnIfMissing('tasks', 'task_workload', "TEXT NOT NULL DEFAULT ''");
@@ -447,11 +449,11 @@ function seedTasks() {
   const insertTask = db.prepare(`
     INSERT OR IGNORE INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
-      deadline, priority, temperature_c, humidity_pct, task_workload, notes,
+      deadline, priority, task_intensity, temperature_c, humidity_pct, task_workload, notes,
       scheduler_recommendation, status, due, tone
     ) VALUES (
       $id, $title, $owner, $location, $taskTemplate, $project, $zone, $quantity, $unit,
-      $deadline, $priority, $temperatureC, $humidityPct, $workload, $notes,
+      $deadline, $priority, $intensity, $temperatureC, $humidityPct, $workload, $notes,
       $schedulerRecommendation, $status, $due, $tone
     )
   `);
@@ -470,6 +472,7 @@ function seedTasks() {
         $unit: task.unit,
         $deadline: task.deadline,
         $priority: task.priority,
+        $intensity: task.intensity,
         $temperatureC: task.temperatureC,
         $humidityPct: task.humidityPct,
         $workload: task.workload,
@@ -550,9 +553,10 @@ type WorkerRow = Omit<Worker, 'status'> & {
   status: WorkerStatus;
 };
 
-type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'temperatureC' | 'humidityPct' | 'workload' | 'schedulerRecommendation'> & {
+type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'intensity' | 'temperatureC' | 'humidityPct' | 'workload' | 'schedulerRecommendation'> & {
   tone: Tone;
   task_template: string;
+  task_intensity: string;
   temperature_c: number | null;
   humidity_pct: number | null;
   task_workload: string;
@@ -622,9 +626,10 @@ export async function createTask(input: {
   unit: string;
   deadline: string;
   priority: string;
+  intensity: TaskIntensity;
   notes?: string;
 }): Promise<Task> {
-  const workload = inferWorkload(input.taskTemplate, input.quantity);
+  const workload = inferWorkload(input.taskTemplate, input.quantity, input.intensity);
   const schedulerRecommendation = await buildSchedulerRecommendation({ ...input, workload }, getWorkers());
   const environment = getLatestEnvironment(input.zone);
   const task: Task = {
@@ -639,6 +644,7 @@ export async function createTask(input: {
     unit: input.unit.trim(),
     deadline: input.deadline.trim(),
     priority: input.priority,
+    intensity: input.intensity,
     temperatureC: environment?.temperature_c ?? null,
     humidityPct: environment?.humidity_pct ?? null,
     workload,
@@ -652,11 +658,11 @@ export async function createTask(input: {
   db.prepare(`
     INSERT INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
-      deadline, priority, temperature_c, humidity_pct, task_workload, notes,
+      deadline, priority, task_intensity, temperature_c, humidity_pct, task_workload, notes,
       scheduler_recommendation, status, due, tone
     ) VALUES (
       $id, $title, $owner, $location, $taskTemplate, $project, $zone, $quantity, $unit,
-      $deadline, $priority, $temperatureC, $humidityPct, $workload, $notes,
+      $deadline, $priority, $intensity, $temperatureC, $humidityPct, $workload, $notes,
       $schedulerRecommendation, $status, $due, $tone
     )
   `).run({
@@ -671,6 +677,7 @@ export async function createTask(input: {
     $unit: task.unit,
     $deadline: task.deadline,
     $priority: task.priority,
+    $intensity: task.intensity,
     $temperatureC: task.temperatureC,
     $humidityPct: task.humidityPct,
     $workload: task.workload,
@@ -784,6 +791,7 @@ function hashPassword(password: string) {
 
 async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> {
   const environment = getLatestEnvironment(row.zone || row.location);
+  const intensity = normalizeTaskIntensity(row.task_intensity);
   const schedulerInput = {
     taskTemplate: row.task_template || row.title,
     project: row.project,
@@ -792,7 +800,8 @@ async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> 
     unit: row.unit,
     deadline: row.deadline || row.due,
     priority: row.priority,
-    workload: row.task_workload || inferWorkload(row.task_template || row.title, row.quantity)
+    intensity,
+    workload: row.task_workload || inferWorkload(row.task_template || row.title, row.quantity, intensity)
   };
 
   return {
@@ -807,6 +816,7 @@ async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> 
     unit: row.unit,
     deadline: schedulerInput.deadline,
     priority: row.priority,
+    intensity,
     temperatureC: environment?.temperature_c ?? null,
     humidityPct: environment?.humidity_pct ?? null,
     workload: schedulerInput.workload,
@@ -830,6 +840,7 @@ async function buildSchedulerRecommendation(input: {
   unit: string;
   deadline: string;
   priority: string;
+  intensity: TaskIntensity;
   workload: string;
 }, availableWorkers: Worker[]): Promise<SchedulerRecommendation> {
   const urgent = input.priority === 'High' || input.priority === 'Critical';
@@ -838,6 +849,7 @@ async function buildSchedulerRecommendation(input: {
     taskTemplate: input.taskTemplate,
     quantity: input.quantity,
     deadline: input.deadline,
+    intensity: input.intensity,
     environment: {
       temperatureC: environment?.temperature_c,
       humidityPct: environment?.humidity_pct,
@@ -853,6 +865,7 @@ async function buildSchedulerRecommendation(input: {
     requiredCertifications: requiredPpeAndCertifications,
     zone: input.zone,
     recommendedCrewSize: workerCount,
+    intensity: input.intensity,
     workers: availableWorkers
   }).map((worker) => ({
     workerId: worker.workerId,
@@ -892,7 +905,7 @@ async function buildSchedulerRecommendation(input: {
       ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.', ...capacity.warnings]
       : ['Confirm zone access before dispatch.', ...capacity.warnings],
     chronosForecast,
-    schedulerStatus: 'Live scheduler inference: capacity, worker assignment, fatigue status, and Chronos-2 forecasting are recalculated from current task and worker data.'
+    schedulerStatus: `Live scheduler inference includes ${input.intensity.toLowerCase()} task intensity, capacity, worker fatigue, and Chronos-2 forecasting.`
   };
 }
 
@@ -906,9 +919,13 @@ function getLatestEnvironment(zone: string): EnvironmentRow | null {
   `).get(zone.trim()) ?? null;
 }
 
-function inferDependencyStatus(input: { priority: string; workload: string; zone: string }) {
+function inferDependencyStatus(input: { priority: string; intensity: TaskIntensity; workload: string; zone: string }) {
   if (input.priority === 'Critical') {
     return `Critical task in ${input.zone}: supervisor clearance required before dispatch.`;
+  }
+
+  if (input.intensity === 'High') {
+    return `High-intensity work in ${input.zone}: verify fatigue readiness before assignment.`;
   }
 
   if (input.workload === 'High') {
@@ -925,11 +942,13 @@ function getChronosForecastInput(
     zone: string;
     quantity: number;
     workload: string;
+    intensity: TaskIntensity;
   },
   currentWorkerHours: number,
   currentBreakMinutes: number,
   currentActiveWorkers: number
 ): ChronosForecastInput {
+  const intensityRecoveryMinutes = input.intensity === 'High' ? 15 : input.intensity === 'Medium' ? 5 : 0;
   const historicalRows = db.query<{
     quantity: number;
     scheduler_recommendation: string;
@@ -978,8 +997,8 @@ function getChronosForecastInput(
     ],
     breakMinutes: [
       Math.max(0, currentBreakMinutes),
-      Math.max(0, currentBreakMinutes + (input.workload === 'High' ? 10 : 0)),
-      Math.max(0, currentBreakMinutes + (input.workload === 'High' ? 15 : 5))
+      Math.max(0, currentBreakMinutes + intensityRecoveryMinutes),
+      Math.max(0, currentBreakMinutes + intensityRecoveryMinutes + (input.workload === 'High' ? 10 : 5))
     ],
     activeWorkers: [currentActiveWorkers, currentActiveWorkers, currentActiveWorkers],
     predictionLength: 4

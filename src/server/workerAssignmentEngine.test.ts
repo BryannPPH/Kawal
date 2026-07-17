@@ -48,4 +48,27 @@ describe('Worker Assignment Engine', () => {
     expect(recommendations[0].workerId).toBe('new-worker');
     expect(recommendations[0].reasons.join(' ')).toContain('Cold-start worker profile');
   });
+
+  it('penalizes fatigued workers more strongly for high-intensity work', () => {
+    const candidate = {
+      ...workers[0],
+      id: 'fatigued-candidate',
+      name: 'Fatigued Candidate',
+      match: 45,
+      fatigue: 60
+    };
+    const commonInput = {
+      taskTemplate: 'Steel beam install',
+      requiredSkills: ['steel'],
+      requiredCertifications: ['Helmet', 'Harness'],
+      zone: 'Zone C',
+      recommendedCrewSize: 1,
+      workers: [candidate]
+    };
+    const low = recommendWorkers({ ...commonInput, intensity: 'Low' })[0];
+    const high = recommendWorkers({ ...commonInput, intensity: 'High' })[0];
+
+    expect(high.score).toBeLessThan(low.score);
+    expect(high.reasons.join(' ')).toContain('High-intensity task');
+  });
 });

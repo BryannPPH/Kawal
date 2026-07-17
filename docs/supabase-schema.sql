@@ -34,12 +34,17 @@ create table if not exists tasks (
   unit text not null default '',
   deadline text not null default '',
   priority text not null default '',
+  intensity text not null default 'Medium' check (intensity in ('Low', 'Medium', 'High')),
   notes text not null default '',
   scheduler_recommendation jsonb not null default '{}'::jsonb,
   status text not null,
   due text not null,
   tone text not null check (tone in ('neutral', 'success', 'warning', 'danger'))
 );
+
+alter table public.tasks
+  add column if not exists intensity text not null default 'Medium'
+  check (intensity in ('Low', 'Medium', 'High'));
 
 create table if not exists notifications (
   id text primary key,

@@ -1,3 +1,5 @@
+import type { TaskIntensity } from '../types/workforce';
+
 export type CapacityEnvironment = {
   temperatureC?: number | null;
   humidityPct?: number | null;
@@ -8,6 +10,7 @@ export type CapacityEstimateInput = {
   taskTemplate: string;
   quantity: number;
   deadline: string;
+  intensity?: TaskIntensity;
   environment?: CapacityEnvironment;
   availableWorkerCount?: number;
   now?: Date;
@@ -22,9 +25,10 @@ export type CapacityEstimate = {
   deadlineFeasibilityStatus: 'FEASIBLE' | 'AT_RISK' | 'NOT_FEASIBLE' | 'UNKNOWN_DEADLINE';
   productivityRatePerWorkerHour: number;
   environmentFactor: number;
+  intensityFactor: number;
   predictedWorkload: 'Low' | 'Medium' | 'High';
   warnings: string[];
-  estimatorVersion: 'capacity-estimator-v1';
+  estimatorVersion: 'capacity-estimator-v2';
 };
 
 const defaultProductivityRate = 8;
@@ -46,9 +50,11 @@ export function estimateCapacity(input: CapacityEstimateInput): CapacityEstimate
   const now = input.now ?? new Date();
   const quantity = Math.max(1, input.quantity);
   const baseRate = getProductivityRate(input.taskTemplate);
-  const predictedWorkload = inferWorkloadFromRate(input.taskTemplate, quantity, baseRate);
+  const intensity = input.intensity ?? 'Medium';
+  const intensityFactor = getIntensityFactor(intensity);
+  const predictedWorkload = applyIntensityToWorkload(inferWorkloadFromRate(input.taskTemplate, quantity, baseRate), intensity);
   const environmentFactor = getEnvironmentFactor({ ...input.environment, workload: input.environment?.workload ?? predictedWorkload });
-  const adjustedRate = Math.max(0.5, baseRate * environmentFactor);
+  const adjustedRate = Math.max(0.5, (baseRate * environmentFactor) / intensityFactor);
   const totalWorkerHours = round(quantity / adjustedRate, 2);
   const availableWorkerCount = Math.max(1, input.availableWorkerCount ?? 6);
   const recommendedCrewSize = Math.max(1, Math.min(availableWorkerCount, Math.ceil(totalWorkerHours / 4)));
@@ -66,14 +72,22 @@ export function estimateCapacity(input: CapacityEstimateInput): CapacityEstimate
     deadlineFeasibilityStatus,
     productivityRatePerWorkerHour: round(adjustedRate, 2),
     environmentFactor,
+    intensityFactor,
     predictedWorkload,
-    warnings: getWarnings({ ...input.environment, workload: input.environment?.workload ?? predictedWorkload }, deadlineFeasibilityStatus),
-    estimatorVersion: 'capacity-estimator-v1'
+    warnings: getWarnings({ ...input.environment, workload: input.environment?.workload ?? predictedWorkload }, deadlineFeasibilityStatus, intensity),
+    estimatorVersion: 'capacity-estimator-v2'
   };
 }
 
-export function inferWorkload(taskTemplate: string, quantity: number): CapacityEstimate['predictedWorkload'] {
-  return inferWorkloadFromRate(taskTemplate, Math.max(1, quantity), getProductivityRate(taskTemplate));
+export function inferWorkload(taskTemplate: string, quantity: number, intensity: TaskIntensity = 'Medium'): CapacityEstimate['predictedWorkload'] {
+  return applyIntensityToWorkload(
+    inferWorkloadFromRate(taskTemplate, Math.max(1, quantity), getProductivityRate(taskTemplate)),
+    intensity
+  );
+}
+
+export function normalizeTaskIntensity(value: unknown): TaskIntensity {
+  return value === 'Low' || value === 'High' ? value : 'Medium';
 }
 
 function inferWorkloadFromRate(taskTemplate: string, quantity: number, productivityRate: number): CapacityEstimate['predictedWorkload'] {
@@ -89,6 +103,19 @@ function getProductivityRate(taskTemplate: string) {
   const normalizedTemplate = taskTemplate.toLowerCase();
   const matchedKey = Object.keys(templateProductivityRates).find((key) => normalizedTemplate.includes(key));
   return matchedKey ? templateProductivityRates[matchedKey] : defaultProductivityRate;
+}
+
+function getIntensityFactor(intensity: TaskIntensity) {
+  return intensity === 'High' ? 1.35 : intensity === 'Low' ? 0.88 : 1;
+}
+
+function applyIntensityToWorkload(
+  workload: CapacityEstimate['predictedWorkload'],
+  intensity: TaskIntensity
+): CapacityEstimate['predictedWorkload'] {
+  if (intensity === 'High') return 'High';
+  if (intensity === 'Medium' && workload === 'Low') return 'Medium';
+  return workload;
 }
 
 function getEnvironmentFactor(environment?: CapacityEnvironment) {
@@ -122,7 +149,11 @@ function getDeadlineFeasibility(deadline: Date | null, estimatedFinish: Date): C
   return 'NOT_FEASIBLE';
 }
 
-function getWarnings(environment: CapacityEnvironment | undefined, feasibility: CapacityEstimate['deadlineFeasibilityStatus']) {
+function getWarnings(
+  environment: CapacityEnvironment | undefined,
+  feasibility: CapacityEstimate['deadlineFeasibilityStatus'],
+  intensity: TaskIntensity
+) {
   const warnings: string[] = [];
 
   if (!environment) {
@@ -137,6 +168,12 @@ function getWarnings(environment: CapacityEnvironment | undefined, feasibility: 
     warnings.push('High workload reduces effective productivity and may require a larger crew.');
   } else if (environment?.workload?.toLowerCase() === 'medium') {
     warnings.push('Medium workload slightly reduces effective productivity.');
+  }
+
+  if (intensity === 'High') {
+    warnings.push('High task intensity increases effort, fatigue exposure, and required worker-hours.');
+  } else if (intensity === 'Low') {
+    warnings.push('Low task intensity uses a reduced effort factor.');
   }
 
   if (feasibility === 'NOT_FEASIBLE') {

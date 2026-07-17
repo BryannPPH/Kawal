@@ -8,6 +8,7 @@ import { taskTemplates } from '../../constants/taskTemplates';
 import { useWorkforceData } from '../../hooks/useWorkforceData';
 import { formatNotificationRelativeTime, sortNotificationsNewestFirst } from '../../lib/notificationTime';
 import type { ManagerSection } from '../../types/navigation';
+import type { TaskIntensity } from '../../types/workforce';
 import { ManagerSidebar } from './components/ManagerSidebar';
 import { DashboardView } from './views/DashboardView';
 import { IoTView } from './views/IoTView';
@@ -61,6 +62,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const [taskUnit, setTaskUnit] = useState('');
   const [taskDeadline, setTaskDeadline] = useState('');
   const [taskPriority, setTaskPriority] = useState('');
+  const [taskIntensity, setTaskIntensity] = useState<TaskIntensity | ''>('');
   const [taskNotes, setTaskNotes] = useState('');
   const [taskError, setTaskError] = useState<string | null>(null);
   const [taskSubmitting, setTaskSubmitting] = useState(false);
@@ -161,6 +163,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     setTaskUnit('');
     setTaskDeadline('');
     setTaskPriority('');
+    setTaskIntensity('');
     setTaskNotes('');
     setTaskError(null);
     setCreateTaskStep(0);
@@ -174,8 +177,8 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
   const nextCreateTaskStep = () => {
     setTaskError(null);
 
-    if (createTaskStep === 0 && (!taskTemplate || !taskQuantity || !taskUnit || !taskPriority)) {
-      setTaskError('Select a template, quantity, unit, and priority first.');
+    if (createTaskStep === 0 && (!taskTemplate || !taskQuantity || !taskUnit || !taskPriority || !taskIntensity)) {
+      setTaskError('Select a template, quantity, unit, priority, and intensity first.');
       return;
     }
 
@@ -201,6 +204,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
         unit: taskUnit,
         deadline: taskDeadline,
         priority: taskPriority,
+        intensity: taskIntensity || 'Medium',
         notes: taskNotes
       });
       setCreateTaskOpen(false);
@@ -542,7 +546,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                           {taskTemplates.map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}
                         </select>
                       </label>
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <label className="block">
                           <span className="text-sm font-semibold text-[#2F2C2A]">Quantity</span>
                           <input value={taskQuantity} onChange={(event) => setTaskQuantity(event.target.value)} type="number" min="1" className="field-input mt-2" placeholder="8" required />
@@ -556,6 +560,18 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                           <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)} className="field-input mt-2" required>
                             <option value="">Priority</option>
                             {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority}>{priority}</option>)}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="text-sm font-semibold text-[#2F2C2A]">Intensity</span>
+                          <select
+                            value={taskIntensity}
+                            onChange={(event) => setTaskIntensity(event.target.value as TaskIntensity | '')}
+                            className="field-input mt-2"
+                            required
+                          >
+                            <option value="">Intensity</option>
+                            {(['Low', 'Medium', 'High'] as TaskIntensity[]).map((intensity) => <option key={intensity}>{intensity}</option>)}
                           </select>
                         </label>
                       </div>
@@ -610,6 +626,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
                         <ReviewTile label="Site" value={taskProject && taskZone ? `${taskProject} / ${taskZone}` : '-'} />
                         <ReviewTile label="Quantity" value={taskQuantity && taskUnit ? `${taskQuantity} ${taskUnit}` : '-'} />
                         <ReviewTile label="Priority" value={taskPriority || '-'} />
+                        <ReviewTile label="Intensity" value={taskIntensity || '-'} />
                       </div>
                     </div>
                   ) : null}

@@ -285,6 +285,7 @@ const server = Bun.serve({
           humidityPct?: number;
           workload?: string;
         };
+        intensity?: 'Low' | 'Medium' | 'High';
       }>(request);
 
       if (!body.taskTemplate?.trim() || typeof body.quantity !== 'number' || body.quantity <= 0 || !body.deadline?.trim()) {
@@ -295,6 +296,7 @@ const server = Bun.serve({
         taskTemplate: body.taskTemplate,
         quantity: body.quantity,
         deadline: body.deadline,
+        intensity: body.intensity,
         environment: body.environment,
         availableWorkerCount: getWorkers().length
       });
@@ -304,7 +306,10 @@ const server = Bun.serve({
         estimatedDuration: estimate.estimatedDuration,
         estimatedFinishTime: estimate.estimatedFinishTime,
         deadlineFeasibilityStatus: estimate.deadlineFeasibilityStatus,
-        totalWorkerHours: estimate.totalWorkerHours
+        totalWorkerHours: estimate.totalWorkerHours,
+        productivityRatePerWorkerHour: estimate.productivityRatePerWorkerHour,
+        intensityFactor: estimate.intensityFactor,
+        predictedWorkload: estimate.predictedWorkload
       });
     }
 
@@ -315,6 +320,7 @@ const server = Bun.serve({
         requiredCertifications?: string[];
         zone?: string;
         recommendedCrewSize?: number;
+        intensity?: 'Low' | 'Medium' | 'High';
       }>(request);
 
       if (!body.taskTemplate?.trim()) {
@@ -329,6 +335,7 @@ const server = Bun.serve({
           requiredCertifications: body.requiredCertifications,
           zone: body.zone,
           recommendedCrewSize: body.recommendedCrewSize ?? 3,
+          intensity: body.intensity,
           workers: getWorkers()
         })
       });
@@ -376,6 +383,7 @@ const server = Bun.serve({
         unit?: string;
         deadline?: string;
         priority?: string;
+        intensity?: 'Low' | 'Medium' | 'High';
         notes?: string;
       }>(request);
 
@@ -387,9 +395,11 @@ const server = Bun.serve({
         body.quantity <= 0 ||
         !body.unit?.trim() ||
         !body.deadline?.trim() ||
-        !body.priority?.trim()
+        !body.priority?.trim() ||
+        !body.intensity ||
+        !['Low', 'Medium', 'High'].includes(body.intensity)
       ) {
-        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, and priority are required' }, { status: 400 });
+        return jsonResponse({ error: 'Task template, project, zone, quantity, unit, deadline, priority, and intensity are required' }, { status: 400 });
       }
 
       const taskInput = {
@@ -400,6 +410,7 @@ const server = Bun.serve({
         unit: body.unit,
         deadline: body.deadline,
         priority: body.priority,
+        intensity: body.intensity,
         notes: body.notes
       };
 

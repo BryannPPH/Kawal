@@ -109,6 +109,7 @@ export function TasksView({
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Pill className={toneStyles[task.tone]}>{task.priority || task.status}</Pill>
+                    <Pill className="bg-[#FFF7ED] text-[#9A5719]">{task.intensity} intensity</Pill>
                     <Pill className="bg-[#FFF1E8] text-[#C95119]">{task.schedulerRecommendation.predictedWorkload ?? task.workload ?? 'No workload'}</Pill>
                   </div>
                   <div className="flex items-center gap-2 text-sm font-semibold text-[#5F5A56]">
@@ -272,6 +273,7 @@ function TaskDetailModal({
             <Info label="Quantity" value={`${task.quantity} ${task.unit}`} />
             <Info label="Location" value={task.location || task.zone} />
             <Info label="Predicted workload" value={task.schedulerRecommendation.predictedWorkload ?? task.workload ?? '-'} />
+            <Info label="Intensity" value={task.intensity} />
             <Info label="Worker-hours" value={String(task.schedulerRecommendation.totalWorkerHours)} />
             <Info label="Crew size" value={String(task.schedulerRecommendation.recommendedCrewSize)} />
             <Info label="Duration" value={task.schedulerRecommendation.estimatedDuration} />

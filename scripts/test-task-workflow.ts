@@ -13,10 +13,13 @@ try {
     unit: 'beams',
     deadline: '2030-01-01T12:00',
     priority: 'High',
+    intensity: 'High',
     notes: 'Transaction-scoped test task'
   });
 
   if (task.owner !== 'Unassigned') throw new Error('New task should be unassigned');
+  if (task.intensity !== 'High') throw new Error('Task intensity was not persisted');
+  if (task.schedulerRecommendation.predictedWorkload !== 'High') throw new Error('High intensity did not affect predicted workload');
   if (!task.schedulerRecommendation.selectedWorkerRecommendations.length) throw new Error('Scheduler returned no worker recommendations');
   if (!(await getTasks()).some((storedTask) => storedTask.id === task.id)) throw new Error('Created task was not persisted');
 

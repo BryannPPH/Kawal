@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { notifications as fallbackNotifications, workers as fallbackWorkers } from '../constants/workforce';
-import type { Notification, Task, WorkforceData } from '../types/workforce';
+import type { Notification, Task, TaskIntensity, WorkforceData } from '../types/workforce';
 
 export type WorkerRestRecommendation = {
   workerId: string;
@@ -98,6 +98,7 @@ export function useWorkforceData() {
     unit: string;
     deadline: string;
     priority: string;
+    intensity: TaskIntensity;
     notes?: string;
   }) => {
     const response = await fetch('/api/tasks', {

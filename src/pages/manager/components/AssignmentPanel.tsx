@@ -251,7 +251,10 @@ export function AssignmentRankingModal({
                 </div>
                 {scanReady ? <Check size={19} className="text-[#55936A]" /> : <Loader2 size={20} className="animate-spin text-[#FD7124]" />}
               </div>
-              <Pill className={toneStyles[task.tone]}>{task.priority}</Pill>
+              <div className="flex items-center gap-2">
+                <Pill className="bg-[#FFF4DC] text-[#8A4B02]">{task.intensity} intensity</Pill>
+                <Pill className={toneStyles[task.tone]}>{task.priority}</Pill>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -409,7 +412,9 @@ export function buildAssignmentCandidates(task: Task | null, workers: Worker[]):
               ? -40
               : -8;
       const recommendationScore = recommendation ? 98 - recommendation.index * 7 : worker.match - 14;
-      const fatiguePenalty = Math.max(0, worker.fatigue - 45) * 0.35;
+      const fatigueThreshold = task.intensity === 'High' ? 25 : task.intensity === 'Low' ? 60 : 45;
+      const fatigueMultiplier = task.intensity === 'High' ? 0.55 : task.intensity === 'Low' ? 0.2 : 0.35;
+      const fatiguePenalty = Math.max(0, worker.fatigue - fatigueThreshold) * fatigueMultiplier;
       const score = clampScore(Math.round(recommendationScore + statusScore + (sameZone ? 8 : 0) - fatiguePenalty));
 
       return {
@@ -427,7 +432,7 @@ export function buildAssignmentCandidates(task: Task | null, workers: Worker[]):
 function explainWorkerFit(worker: Worker, task: Task, sameZone: boolean) {
   const zone = sameZone ? 'same zone' : `currently in ${worker.zone}`;
   const status = worker.status === 'waiting' ? 'available now' : `${worker.status} status`;
-  return `${worker.role} is ${status}, ${zone}, with ${worker.fatigue}% fatigue against ${task.workload} workload.`;
+  return `${worker.role} is ${status}, ${zone}, with ${worker.fatigue}% fatigue for ${task.intensity.toLowerCase()} intensity and ${task.workload} workload.`;
 }
 
 function clampScore(value: number) {

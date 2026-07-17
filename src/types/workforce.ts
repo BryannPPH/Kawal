@@ -4,6 +4,8 @@ export type WorkerStatus = 'waiting' | 'working' | 'break' | 'done' | 'emergency
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger';
 
+export type TaskIntensity = 'Low' | 'Medium' | 'High';
+
 export type WorkerEnvironment = {
   source: 'live' | 'stub';
   temperatureC: number | null;
@@ -79,6 +81,7 @@ export type Task = {
   unit: string;
   deadline: string;
   priority: string;
+  intensity: TaskIntensity;
   temperatureC: number | null;
   humidityPct: number | null;
   workload: string;

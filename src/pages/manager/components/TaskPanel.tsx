@@ -37,8 +37,8 @@ export function TaskPanel({ tasks }: { tasks: Task[] }) {
               </div>
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-[#776B63]">
-                  <span>Workload</span>
-                  <span>{workload}</span>
+                  <span>{task.intensity} intensity</span>
+                  <span>{workload} workload</span>
                 </div>
                 <div className="h-2 rounded-full bg-[#F5D8C8]">
                   <div className="h-2 rounded-full bg-[#FD7124]" style={{ width: `${workloadWidth}%` }} />

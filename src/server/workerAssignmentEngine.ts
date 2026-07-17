@@ -1,4 +1,4 @@
-import type { Worker, WorkerStatus } from '../types/workforce';
+import type { TaskIntensity, Worker, WorkerStatus } from '../types/workforce';
 
 export type WorkerAssignmentInput = {
   taskTemplate: string;
@@ -6,6 +6,7 @@ export type WorkerAssignmentInput = {
   requiredCertifications?: string[];
   zone?: string;
   recommendedCrewSize: number;
+  intensity?: TaskIntensity;
   workers: Worker[];
 };
 
@@ -91,6 +92,15 @@ function scoreWorker(worker: Worker, input: WorkerAssignmentInput): WorkerRecomm
   } else {
     score += 10;
     reasons.push('Fatigue status is acceptable');
+  }
+
+  if (input.intensity === 'High') {
+    const intensityPenalty = Math.max(0, worker.fatigue - 25) * 0.3;
+    score -= intensityPenalty;
+    reasons.push(`High-intensity task applies ${Math.round(intensityPenalty)} fatigue-fit penalty`);
+  } else if (input.intensity === 'Low') {
+    score += 3;
+    reasons.push('Low-intensity task has lighter fatigue demand');
   }
 
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)));

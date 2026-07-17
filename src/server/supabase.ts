@@ -1,8 +1,8 @@
 import { notifications as fallbackNotifications, tasks as fallbackTasks, workers as fallbackWorkers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
 import type { IoTDevice, IncidentCenterData, IoTIncident, IoTOverview, RestRequest } from '../types/iot';
-import type { Notification, SchedulerRecommendation, Task, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
-import { estimateCapacity, inferWorkload } from './capacityEstimator';
+import type { Notification, SchedulerRecommendation, Task, TaskIntensity, Tone, Worker, WorkerStatus, WorkforceData } from '../types/workforce';
+import { estimateCapacity, inferWorkload, normalizeTaskIntensity } from './capacityEstimator';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
 import { db } from './database';
 import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
@@ -43,7 +43,12 @@ const iotTaskProofs = loadRuntimeStateMap<IoTTaskProof>('task-proof');
 const iotRuntimeNotifications = loadRuntimeStateValues<Notification>('notification')
   .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
 const iotIncidentStateOverrides = loadRuntimeStateMap<IoTIncidentStateOverride>('incident-state');
-const iotRuntimeTasks = loadRuntimeStateMap<Task>('task');
+const iotRuntimeTasks = new Map(
+  Array.from(loadRuntimeStateMap<Task>('task')).map(([id, task]) => [id, {
+    ...task,
+    intensity: normalizeTaskIntensity(task.intensity)
+  }])
+);
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey);
@@ -155,7 +160,7 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
     selectRows<SupabaseEnvironmentRow>('environment_readings', `select=temperature_c,humidity_pct,recorded_at&zone_id=eq.${encodeFilterValue(input.zone)}&valid=eq.true&order=recorded_at.desc&limit=1`)
   ]);
   const environment = environmentRows[0] ?? null;
-  const workload = inferWorkload(input.taskTemplate, input.quantity);
+  const workload = inferWorkload(input.taskTemplate, input.quantity, input.intensity);
   const schedulerRecommendation = await makeSchedulerRecommendation({ ...input, workload }, workers, environment);
   const task: Task = {
     id: slugify(`${input.taskTemplate}-${Date.now()}`),
@@ -169,6 +174,7 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
     unit: input.unit.trim(),
     deadline: input.deadline.trim(),
     priority: input.priority,
+    intensity: input.intensity,
     temperatureC: environment?.temperature_c ?? null,
     humidityPct: environment?.humidity_pct ?? null,
     workload,
@@ -1446,6 +1452,7 @@ function makeIoTTasks(worker: Worker, environment: IoTEnvironmentConditionRow | 
       unit: 'minutes',
       deadline: checkpointDeadline,
       priority,
+      intensity: priority === 'Critical' || priority === 'High' ? 'High' : 'Medium',
       temperatureC: environment?.avg_suhu ?? null,
       humidityPct: environment?.avg_kelembaban ?? null,
       workload: worker.workload,
@@ -1548,7 +1555,7 @@ function applyIoTTaskProofs(tasks: Task[]) {
 }
 
 async function createSupabaseIoTStubTask(input: CreateTaskInput, workers: Worker[]): Promise<Task> {
-  const workload = inferWorkload(input.taskTemplate, input.quantity);
+  const workload = inferWorkload(input.taskTemplate, input.quantity, input.intensity);
   const base = fallbackTasks[0];
   const schedulerRecommendation = await makeSchedulerRecommendation({ ...input, workload }, workers.length ? workers : fallbackWorkers, null);
 
@@ -1565,6 +1572,7 @@ async function createSupabaseIoTStubTask(input: CreateTaskInput, workers: Worker
     unit: input.unit,
     deadline: input.deadline,
     priority: input.priority,
+    intensity: input.intensity,
     temperatureC: null,
     humidityPct: null,
     workload,
@@ -2147,6 +2155,7 @@ function mapTask(row: SupabaseTaskRow): Task {
     unit: row.unit,
     deadline: row.deadline || row.due,
     priority: row.priority,
+    intensity: normalizeTaskIntensity(row.intensity),
     temperatureC: null,
     humidityPct: null,
     workload: schedulerRecommendation.predictedWorkload ?? 'Medium',
@@ -2175,6 +2184,7 @@ function taskToRow(task: Task): SupabaseTaskRow {
     unit: task.unit,
     deadline: task.deadline,
     priority: task.priority,
+    intensity: task.intensity,
     notes: task.notes,
     scheduler_recommendation: task.schedulerRecommendation,
     status: task.status,
@@ -2243,6 +2253,7 @@ async function makeSchedulerRecommendation(
     taskTemplate: input.taskTemplate,
     quantity: input.quantity,
     deadline: input.deadline,
+    intensity: input.intensity,
     environment: {
       temperatureC: environment?.temperature_c,
       humidityPct: environment?.humidity_pct,
@@ -2258,6 +2269,7 @@ async function makeSchedulerRecommendation(
     requiredCertifications: requiredPpeAndCertifications,
     zone: input.zone,
     recommendedCrewSize: workerCount,
+    intensity: input.intensity,
     workers: availableWorkers
   })
     .map((worker) => ({
@@ -2265,10 +2277,15 @@ async function makeSchedulerRecommendation(
       workerName: worker.workerName,
       explanation: worker.explanation
     }));
+  const intensityRecoveryMinutes = input.intensity === 'High' ? 15 : input.intensity === 'Medium' ? 5 : 0;
   const chronosForecast = await forecastProductivity({
     historicalCompletedQuantity: [Math.max(1, Math.round(input.quantity * 0.72)), Math.max(1, Math.round(input.quantity * 0.86)), input.quantity],
     workerHours: [capacity.totalWorkerHours * 0.9, capacity.totalWorkerHours, capacity.totalWorkerHours * 1.08],
-    breakMinutes: [0, input.workload === 'High' ? 10 : 5, input.workload === 'High' ? 15 : 5],
+    breakMinutes: [
+      0,
+      intensityRecoveryMinutes,
+      intensityRecoveryMinutes + (input.workload === 'High' ? 10 : 5)
+    ],
     activeWorkers: [workerCount, workerCount, workerCount],
     predictionLength: 4
   }).catch((error) => chronosUnavailableForecast(error instanceof Error ? error.message : 'Chronos model request failed'));
@@ -2289,7 +2306,11 @@ async function makeSchedulerRecommendation(
     deadlineFeasibilityStatus: capacity.deadlineFeasibilityStatus,
     capacityEstimatorVersion: capacity.estimatorVersion,
     requiredPpeAndCertifications,
-    dependencyStatus: urgent ? `Supervisor clearance required before dispatch in ${input.zone}.` : `No blocking dependency inferred for ${input.zone}.`,
+    dependencyStatus: urgent
+      ? `Supervisor clearance required before dispatch in ${input.zone}.`
+      : input.intensity === 'High'
+        ? `High-intensity task in ${input.zone}: verify fatigue readiness before dispatch.`
+        : `No blocking dependency inferred for ${input.zone}.`,
     currentEnvironmentalConditions: environment
       ? `IoT telemetry: ${environment.temperature_c ?? '-'}C, ${environment.humidity_pct ?? '-'}% humidity at ${environment.recorded_at}.`
       : 'No current IoT telemetry for this zone; baseline capacity conditions are in use.',
@@ -2297,7 +2318,7 @@ async function makeSchedulerRecommendation(
       ? ['High-priority task: confirm PPE, rest readiness, and zone access before assignment.', ...capacity.warnings]
       : ['Confirm zone access before dispatch.', ...capacity.warnings],
     chronosForecast,
-    schedulerStatus: 'Live scheduler inference: capacity, worker assignment, IoT conditions, and Chronos-2 forecasting are recalculated from current data.'
+    schedulerStatus: `Live scheduler inference includes ${input.intensity.toLowerCase()} task intensity, capacity, worker fatigue, IoT conditions, and Chronos-2 forecasting.`
   };
 }
 
@@ -2383,6 +2404,7 @@ type CreateTaskInput = {
   unit: string;
   deadline: string;
   priority: string;
+  intensity: TaskIntensity;
   notes?: string;
   owner?: string;
 };
@@ -2412,6 +2434,7 @@ type SupabaseTaskRow = {
   unit: string;
   deadline: string;
   priority: string;
+  intensity?: string | null;
   notes: string;
   scheduler_recommendation: unknown;
   status: string;

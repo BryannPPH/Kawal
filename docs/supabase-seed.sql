@@ -30,33 +30,33 @@ on conflict (id) do update set
 
 insert into tasks (
   id, title, owner, location, task_template, project, zone, quantity, unit,
-  deadline, priority, notes, scheduler_recommendation, status, due, tone
+  deadline, priority, intensity, notes, scheduler_recommendation, status, due, tone
 ) values
   (
     'steel-beam-install', 'Steel beam install', 'Budi Santoso', 'Zone C',
     'Steel beam install', 'Core Tower', 'Zone C', 8, 'beams', '2h 15m',
-    'High', '',
+    'High', 'High', '',
     '{"recommendedWorkerCount":3,"estimatedTaskDuration":"2h 30m","recommendedStartTime":"Next available safe window","estimatedCompletionTime":"Before current shift end","selectedWorkerRecommendations":[{"workerId":"budi","workerName":"Budi Santoso","explanation":"Strong task match and currently assigned near the work zone."}],"expectedProductivityRate":"High with 3-worker crew","deadlineFeasibilityStatus":"Feasible with safety review","requiredPpeAndCertifications":["Helmet","Safety shoes","Harness if working at height"],"dependencyStatus":"No blocking dependency in placeholder scheduler","currentEnvironmentalConditions":"Uses latest Supabase telemetry when scheduler is deployed","safetyAndOperationalWarnings":["Supervisor confirmation required before start"],"schedulerStatus":"Placeholder Supabase seed."}'::jsonb,
     'In progress', '2h 15m', 'warning'
   ),
   (
     'harness-audit', 'Harness audit', 'Dewi Lestari', 'Zone B',
     'Harness audit', 'Core Tower', 'Zone B', 18, 'workers', '45m',
-    'Medium', '',
+    'Medium', 'Medium', '',
     '{"recommendedWorkerCount":2,"estimatedTaskDuration":"1h 30m","recommendedStartTime":"Next available safe window","estimatedCompletionTime":"Same day","selectedWorkerRecommendations":[{"workerId":"dewi","workerName":"Dewi Lestari","explanation":"Safety support role fits audit work."}],"expectedProductivityRate":"Standard crew output","deadlineFeasibilityStatus":"Feasible","requiredPpeAndCertifications":["Helmet","Safety shoes"],"dependencyStatus":"No blocking dependency","currentEnvironmentalConditions":"Pending latest telemetry","safetyAndOperationalWarnings":["Standard toolbox check required"],"schedulerStatus":"Placeholder Supabase seed."}'::jsonb,
     'Assigned', '45m', 'neutral'
   ),
   (
     'scaffold-photo-proof', 'Scaffold photo proof', 'Dimas Ardi', 'Zone A',
     'Scaffold photo proof', 'Podium', 'Zone A', 1, 'report', 'Ready',
-    'Low', '',
+    'Low', 'Low', '',
     '{"recommendedWorkerCount":1,"estimatedTaskDuration":"30m","recommendedStartTime":"Now","estimatedCompletionTime":"Ready","selectedWorkerRecommendations":[{"workerId":"dimas","workerName":"Dimas Ardi","explanation":"Inspector is assigned to the report."}],"expectedProductivityRate":"One report","deadlineFeasibilityStatus":"Feasible","requiredPpeAndCertifications":["Helmet"],"dependencyStatus":"No blocking dependency","currentEnvironmentalConditions":"Pending latest telemetry","safetyAndOperationalWarnings":[],"schedulerStatus":"Placeholder Supabase seed."}'::jsonb,
     'Review', 'Ready', 'success'
   ),
   (
     'wet-surface-cleanup', 'Wet surface cleanup', 'Unassigned', 'Zone C',
     'Wet surface cleanup', 'Podium', 'Zone C', 120, 'm2', '30m',
-    'Critical', '',
+    'Critical', 'High', '',
     '{"recommendedWorkerCount":3,"estimatedTaskDuration":"2h 30m","recommendedStartTime":"Next safe available window","estimatedCompletionTime":"Before current shift end","selectedWorkerRecommendations":[{"workerId":"budi","workerName":"Budi Santoso","explanation":"High match and already near Zone C."}],"expectedProductivityRate":"High with 3-worker crew","deadlineFeasibilityStatus":"Needs supervisor confirmation","requiredPpeAndCertifications":["Helmet","Safety shoes","Supervisor safety sign-off"],"dependencyStatus":"Confirm restricted area status","currentEnvironmentalConditions":"Wet surface reported","safetyAndOperationalWarnings":["Supervisor confirmation required before start"],"schedulerStatus":"Placeholder Supabase seed."}'::jsonb,
     'Open', '30m', 'danger'
   )
@@ -71,6 +71,7 @@ on conflict (id) do update set
   unit = excluded.unit,
   deadline = excluded.deadline,
   priority = excluded.priority,
+  intensity = excluded.intensity,
   notes = excluded.notes,
   scheduler_recommendation = excluded.scheduler_recommendation,
   status = excluded.status,
