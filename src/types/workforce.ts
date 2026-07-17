@@ -4,6 +4,18 @@ export type WorkerStatus = 'waiting' | 'working' | 'break' | 'done' | 'emergency
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger';
 
+export type WorkerEnvironment = {
+  source: 'live' | 'stub';
+  temperatureC: number | null;
+  humidityPct: number | null;
+  pressureHpa: number | null;
+  recordedAt?: string;
+  riskScore: number;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  riskFactors: string[];
+  summary: string;
+};
+
 export type Worker = {
   id: string;
   name: string;
@@ -16,6 +28,7 @@ export type Worker = {
   fatigue: number;
   pay: string;
   match: number;
+  environment?: WorkerEnvironment;
 };
 
 export type SchedulerRecommendation = {
@@ -84,6 +97,7 @@ export type Notification = {
   targetLabel: string;
   targetSection: ManagerSection;
   targetWorkerId?: string;
+  createdAt?: string;
   read: boolean;
 };
 

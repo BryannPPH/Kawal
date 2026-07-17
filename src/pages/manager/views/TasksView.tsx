@@ -17,6 +17,9 @@ export function TasksView({ tasks, onAutoAssign }: { tasks: Task[]; onAutoAssign
   const safetyOpenCount = tasks.filter((task) => ['high', 'critical'].includes(task.priority.toLowerCase())).length;
   const assignedCount = tasks.filter((task) => task.owner !== 'Unassigned').length;
   const assignedPct = tasks.length ? Math.round((assignedCount / tasks.length) * 100) : 0;
+  const sortedTasks = tasks
+    .slice()
+    .sort((left, right) => getTaskUrgencyScore(right, now) - getTaskUrgencyScore(left, now));
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -78,11 +81,14 @@ export function TasksView({ tasks, onAutoAssign }: { tasks: Task[]; onAutoAssign
 
           <div className="mt-6 space-y-4">
             {assignmentError ? <p className="rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{assignmentError}</p> : null}
-            {tasks.map((task) => (
-              <div key={task.id} className="rounded-2xl border border-[#F3D7C8] bg-white p-5 transition hover:border-[#FD7124]/55 hover:bg-[#FFF8F4]">
+            {sortedTasks.map((task, index) => (
+              <div key={task.id} className={`rounded-2xl border p-5 transition hover:border-[#FD7124]/55 ${getTimelineCardClass(index)}`}>
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_120px_150px_110px_44px] lg:items-center">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.taskTemplate}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      {index < 3 ? <span className={getRankBadgeClass(index)}>#{index + 1}</span> : null}
+                      <p className="truncate text-sm font-semibold text-[#2F2C2A]">{task.taskTemplate}</p>
+                    </div>
                     <p className="mt-1 text-sm text-[#776B63]">{task.project} / {task.owner}</p>
                   </div>
                   <div>
@@ -279,6 +285,69 @@ function formatDueCountdown(task: Task, now: Date) {
   }
 
   return diffMs > 0 ? `Due in ${duration}` : `Overdue by ${duration}`;
+}
+
+function getTaskUrgencyScore(task: Task, now: Date) {
+  const priorityScore: Record<string, number> = {
+    critical: 400,
+    high: 300,
+    medium: 180,
+    low: 80
+  };
+  const status = task.status.toLowerCase();
+  const statusScore = status.includes('review')
+    ? 40
+    : status.includes('progress')
+      ? 120
+      : task.owner === 'Unassigned'
+        ? 150
+        : 90;
+  const toneScore = task.tone === 'danger' ? 120 : task.tone === 'warning' ? 80 : task.tone === 'success' ? 20 : 40;
+  const deadline = parseDeadline(task.deadline);
+  let deadlineScore = 0;
+
+  if (deadline) {
+    const hoursLeft = (deadline.getTime() - now.getTime()) / 3_600_000;
+
+    if (hoursLeft < 0) deadlineScore = 220;
+    else if (hoursLeft <= 2) deadlineScore = 180;
+    else if (hoursLeft <= 8) deadlineScore = 120;
+    else if (hoursLeft <= 24) deadlineScore = 70;
+  } else if (task.deadline.toLowerCase().includes('30m')) {
+    deadlineScore = 170;
+  } else if (task.deadline.toLowerCase().includes('45m')) {
+    deadlineScore = 130;
+  }
+
+  return (priorityScore[task.priority.toLowerCase()] ?? 60) + statusScore + toneScore + deadlineScore;
+}
+
+function getTimelineCardClass(index: number) {
+  if (index === 0) {
+    return 'border-[#FD7124]/70 bg-[#FFF1E8] shadow-[0_14px_38px_rgba(253,113,36,0.12)] hover:bg-[#FFEFE6]';
+  }
+
+  if (index === 1) {
+    return 'border-[#FAA745]/70 bg-[#FFF7E8] shadow-[0_12px_32px_rgba(250,167,69,0.1)] hover:bg-[#FFF4DC]';
+  }
+
+  if (index === 2) {
+    return 'border-[#F3D7C8] bg-[#FFF8F4] hover:bg-[#FFEFE6]';
+  }
+
+  return 'border-[#F3D7C8] bg-white hover:bg-[#FFF8F4]';
+}
+
+function getRankBadgeClass(index: number) {
+  if (index === 0) {
+    return 'shrink-0 rounded-lg bg-[#FD7124] px-2 py-1 text-[11px] font-bold text-white';
+  }
+
+  if (index === 1) {
+    return 'shrink-0 rounded-lg bg-[#FAA745] px-2 py-1 text-[11px] font-bold text-[#2F2C2A]';
+  }
+
+  return 'shrink-0 rounded-lg bg-[#FFEFE6] px-2 py-1 text-[11px] font-bold text-[#B84011]';
 }
 
 function parseDeadline(value: string) {

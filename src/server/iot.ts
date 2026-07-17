@@ -1196,9 +1196,9 @@ function getCommand(commandId: string) {
 function createNotification(idPrefix: string, title: string, detail: string, tone: 'neutral' | 'success' | 'warning' | 'danger', targetWorkerId?: string | null) {
   db.prepare(`
     INSERT INTO notifications (
-      id, title, detail, tone, target_label, target_section, target_worker_id, read
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-  `).run(`${idPrefix}-${crypto.randomUUID()}`, title, detail, tone, 'Open IoT', 'dashboard', targetWorkerId ?? null);
+      id, title, detail, tone, target_label, target_section, target_worker_id, created_at, read
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+  `).run(`${idPrefix}-${crypto.randomUUID()}`, title, detail, tone, 'Open IoT', 'dashboard', targetWorkerId ?? null, new Date().toISOString());
 }
 
 function mapDevice(row: DeviceRow) {

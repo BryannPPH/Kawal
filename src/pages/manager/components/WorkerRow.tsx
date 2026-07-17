@@ -1,3 +1,4 @@
+import { CloudSun } from 'lucide-react';
 import { Pill } from '../../../components/ui/Pill';
 import { statusLabels, statusStyles } from '../../../constants/workforce';
 import type { Worker } from '../../../types/workforce';
@@ -28,6 +29,10 @@ export function WorkerRow({ worker, selected, onSelect }: WorkerRowProps) {
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold text-[#2F2C2A]">{worker.name}</span>
           <span className="mt-1 block truncate text-sm text-[#776B63]">{worker.role} / {worker.task}</span>
+          <span className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[#FFF8F4] px-2 py-1 text-[11px] font-semibold text-[#776B63]">
+            <CloudSun size={12} className={worker.environment?.source === 'live' ? 'text-[#247A4D]' : 'text-[#A09188]'} />
+            {worker.environment?.source === 'live' ? 'Live environment' : 'Stub environment'}
+          </span>
         </span>
       </span>
 
@@ -48,6 +53,11 @@ export function WorkerRow({ worker, selected, onSelect }: WorkerRowProps) {
           />
         </span>
         <span className="mt-2 block text-xs text-[#776B63]">{worker.time}</span>
+        {worker.environment ? (
+          <span className="mt-1 block text-xs font-semibold text-[#C95119]">
+            Env risk {worker.environment.riskScore} / {worker.environment.riskLevel}
+          </span>
+        ) : null}
       </span>
 
       <span className="text-left xl:text-right">

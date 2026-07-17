@@ -8,9 +8,17 @@ import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
 import type { Envelope } from './iot';
 import { recommendWorkers } from './workerAssignmentEngine';
 
-const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const configuredSupabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const supabaseUrl = configuredSupabaseUrl.replace(/\/rest\/v1\/?$/, '');
+const supabaseRestUrl = configuredSupabaseUrl.endsWith('/rest/v1') ? configuredSupabaseUrl : `${supabaseUrl}/rest/v1`;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabaseSchema = process.env.SUPABASE_SCHEMA ?? 'public';
+const supabaseDataModel = process.env.SUPABASE_DATA_MODEL ?? 'workforce';
+
+const fallbackUsers = [
+  { id: 'manager-demo', name: 'Project Manager', email: 'manager@gmail.com', role: 'manager' },
+  { id: 'worker-demo', name: 'Budi Santoso', email: 'worker@gmail.com', role: 'worker' }
+] satisfies AuthUser[];
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey);
@@ -18,6 +26,10 @@ export function isSupabaseConfigured() {
 
 export function shouldUseSupabase() {
   return process.env.DATA_SOURCE === 'supabase';
+}
+
+function shouldUseSupabaseIoTModel() {
+  return supabaseDataModel === 'iot';
 }
 
 export function getDataSourceName() {
@@ -31,11 +43,26 @@ export function assertSupabaseConfigured() {
 }
 
 export async function getSupabaseUsers(): Promise<AuthUser[]> {
+  if (shouldUseSupabaseIoTModel()) {
+    return fallbackUsers;
+  }
+
   const rows = await selectRows<SupabaseUserRow>('users', 'select=id,name,email,role&order=id.asc');
   return rows.map(({ role, ...row }) => ({ ...row, role: role as UserRole }));
 }
 
 export async function authenticateSupabaseUser(email: string, password: string): Promise<AuthUser | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const credential = normalizedEmail === 'manager@gmail.com'
+      ? { user: fallbackUsers[0], password: 'mm' }
+      : normalizedEmail === 'worker@gmail.com'
+        ? { user: fallbackUsers[1], password: 'ww' }
+        : null;
+
+    return credential && password === credential.password ? credential.user : null;
+  }
+
   const query = `select=id,name,email,role,password_hash&email=ilike.${encodeFilterValue(email.trim())}&limit=1`;
   const [row] = await selectRows<SupabaseUserRow & { password_hash: string }>('users', query);
 
@@ -48,21 +75,38 @@ export async function authenticateSupabaseUser(email: string, password: string):
 }
 
 export async function getSupabaseWorkers(): Promise<Worker[]> {
+  if (shouldUseSupabaseIoTModel()) {
+    return (await getSupabaseIoTSnapshot()).workers;
+  }
+
   const rows = await selectRows<SupabaseWorkerRow>('workers', 'select=*&order=id.asc');
   return rows.map(mapWorker);
 }
 
 export async function getSupabaseTasks(): Promise<Task[]> {
+  if (shouldUseSupabaseIoTModel()) {
+    return (await getSupabaseIoTSnapshot()).tasks;
+  }
+
   const rows = await selectRows<SupabaseTaskRow>('tasks', 'select=*&order=id.asc');
   return rows.map(mapTask);
 }
 
 export async function getSupabaseNotifications(): Promise<Notification[]> {
-  const rows = await selectRows<SupabaseNotificationRow>('notifications', 'select=*&order=id.asc');
+  if (shouldUseSupabaseIoTModel()) {
+    return (await getSupabaseIoTSnapshot()).notifications;
+  }
+
+  const rows = await selectRows<SupabaseNotificationRow>('notifications', 'select=*&order=created_at.desc.nullslast');
   return rows.map(mapNotification);
 }
 
 export async function getSupabaseWorkforceData(): Promise<WorkforceData> {
+  if (shouldUseSupabaseIoTModel()) {
+    const { workers, tasks, notifications } = await getSupabaseIoTSnapshot();
+    return { workers, tasks, notifications };
+  }
+
   const [workers, tasks, notifications] = await Promise.all([
     getSupabaseWorkers(),
     getSupabaseTasks(),
@@ -73,6 +117,10 @@ export async function getSupabaseWorkforceData(): Promise<WorkforceData> {
 }
 
 export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> {
+  if (shouldUseSupabaseIoTModel()) {
+    return createSupabaseIoTStubTask(input);
+  }
+
   const [workers, environmentRows] = await Promise.all([
     getSupabaseWorkers(),
     selectRows<SupabaseEnvironmentRow>('environment_readings', `select=temperature_c,humidity_pct,recorded_at&zone_id=eq.${encodeFilterValue(input.zone)}&valid=eq.true&order=recorded_at.desc&limit=1`)
@@ -107,6 +155,13 @@ export async function createSupabaseTask(input: CreateTaskInput): Promise<Task> 
 }
 
 export async function autoAssignSupabaseTask(taskId: string): Promise<Task | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    const snapshot = await getSupabaseIoTSnapshot();
+    const task = snapshot.tasks.find((item) => item.id === taskId) ?? snapshot.tasks[0] ?? null;
+    const worker = snapshot.workers[0];
+    return task && worker ? { ...task, owner: worker.name, status: 'Assigned', due: 'IoT-backed stub' } : task;
+  }
+
   const [row] = await selectRows<SupabaseTaskRow>('tasks', `select=*&id=eq.${encodeFilterValue(taskId)}&limit=1`);
 
   if (!row) return null;
@@ -146,11 +201,28 @@ export async function autoAssignSupabaseTask(taskId: string): Promise<Task | nul
 }
 
 export async function markSupabaseNotificationRead(notificationId: string): Promise<Notification | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    const notification = (await getSupabaseIoTSnapshot()).notifications.find((item) => item.id === notificationId);
+    return notification ? { ...notification, read: true } : null;
+  }
+
   const rows = await patchRows<SupabaseNotificationRow>('notifications', `id=eq.${encodeFilterValue(notificationId)}`, { read: true });
   return rows[0] ? mapNotification(rows[0]) : null;
 }
 
 export async function getSupabaseIoTOverview(): Promise<IoTOverview> {
+  if (shouldUseSupabaseIoTModel()) {
+    const snapshot = await getSupabaseIoTSnapshot();
+    return {
+      devices: snapshot.devices,
+      activeIncidents: snapshot.activeIncidents,
+      restRequests: snapshot.restRequests,
+      commands: [],
+      latestFatigue: snapshot.latestFatigue,
+      latestRisk: snapshot.latestRisk
+    };
+  }
+
   const [deviceRows, incidentRows, restRequests, commands, latestRisk] = await Promise.all([
     selectRows<SupabaseDeviceRow>('iot_devices', 'select=*&order=updated_at.desc'),
     selectRows<SupabaseIncidentRow>('emergency_incidents', 'select=*&state=in.(OPEN,ACKNOWLEDGED,ESCALATED)&order=opened_at.desc'),
@@ -169,11 +241,24 @@ export async function getSupabaseIoTOverview(): Promise<IoTOverview> {
 }
 
 export async function listSupabaseDevices(): Promise<IoTDevice[]> {
+  if (shouldUseSupabaseIoTModel()) {
+    return (await getSupabaseIoTSnapshot()).devices;
+  }
+
   const rows = await selectRows<SupabaseDeviceRow>('iot_devices', 'select=*&order=updated_at.desc');
   return rows.map(mapDevice);
 }
 
 export async function getSupabaseIncidentCenter(): Promise<IncidentCenterData> {
+  if (shouldUseSupabaseIoTModel()) {
+    const snapshot = await getSupabaseIoTSnapshot();
+    return {
+      activeIncidents: snapshot.activeIncidents,
+      incidentHistory: snapshot.incidentHistory,
+      nearMissReports: snapshot.nearMissReports
+    };
+  }
+
   const [activeRows, historyRows, nearMissRows] = await Promise.all([
     selectRows<SupabaseIncidentRow>('emergency_incidents', 'select=*&state=in.(OPEN,ACKNOWLEDGED,ESCALATED)&order=opened_at.desc'),
     selectRows<SupabaseIncidentRow>('emergency_incidents', 'select=*&order=opened_at.desc&limit=50'),
@@ -194,6 +279,11 @@ export async function getSupabaseIncidentCenter(): Promise<IncidentCenterData> {
 }
 
 export async function updateSupabaseIncidentState(incidentId: string, state: string): Promise<IoTIncident | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    const incident = (await getSupabaseIoTSnapshot()).incidentHistory.find((item) => item.id === incidentId) ?? null;
+    return incident ? { ...incident, state } : null;
+  }
+
   const now = new Date().toISOString();
   const updates: Record<string, unknown> = { state };
 
@@ -214,6 +304,10 @@ export async function updateSupabaseIncidentState(incidentId: string, state: str
 }
 
 export async function getSupabaseWorkerAppData(workerId: string) {
+  if (shouldUseSupabaseIoTModel()) {
+    return getSupabaseIoTWorkerAppData(workerId);
+  }
+
   const [worker] = await selectRows<SupabaseWorkerRow>('workers', `select=*&id=eq.${encodeFilterValue(workerId)}&limit=1`);
   const mappedWorker = worker ? mapWorker(worker) : null;
   const [taskRows, notificationRows, breakRows, riskRows, incidentRows] = await Promise.all([
@@ -235,6 +329,15 @@ export async function getSupabaseWorkerAppData(workerId: string) {
 }
 
 export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 'waiting' | 'working' | 'break' | 'done') {
+  if (shouldUseSupabaseIoTModel()) {
+    const data = await getSupabaseIoTWorkerAppData(workerId);
+    return {
+      ...data,
+      worker: data.worker ? { ...data.worker, status } : data.worker,
+      action: { ok: true, fallback: true }
+    };
+  }
+
   await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status });
 
   if (status === 'working') {
@@ -257,6 +360,15 @@ export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 
 }
 
 export async function completeSupabaseWorkerAssignment(workerId: string) {
+  if (shouldUseSupabaseIoTModel()) {
+    const data = await getSupabaseIoTWorkerAppData(workerId);
+    return {
+      ...data,
+      worker: data.worker ? { ...data.worker, status: 'done' as const } : data.worker,
+      action: { ok: true, fallback: true }
+    };
+  }
+
   const data = await getSupabaseWorkerAppData(workerId);
 
   if (!data.worker) {
@@ -282,6 +394,13 @@ export async function completeSupabaseWorkerAssignment(workerId: string) {
 }
 
 export async function reportSupabaseWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
+  if (shouldUseSupabaseIoTModel()) {
+    return {
+      ...(await getSupabaseIoTWorkerAppData(workerId)),
+      action: { ok: true, fallback: true, hazardType: input.hazardType ?? 'Hazard' }
+    };
+  }
+
   const data = await getSupabaseWorkerAppData(workerId);
 
   if (!data.worker) {
@@ -302,7 +421,107 @@ export async function reportSupabaseWorkerHazard(workerId: string, input: { haza
   return getSupabaseWorkerAppData(workerId);
 }
 
+export async function getSupabaseWorkerRestRecommendation(workerId: string) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const baseMinutes = data.worker.fatigue >= 75 ? 20 : data.worker.fatigue >= 55 ? 15 : data.worker.fatigue >= 35 ? 10 : 5;
+  const chronos = await forecastProductivity({
+    historicalCompletedQuantity: [2, 3, 4, 4],
+    workerHours: [2, 2.5, 3, Math.max(1, parseWorkerTimeMinutes(data.worker.time) / 60)],
+    breakMinutes: [5, 10, baseMinutes, baseMinutes],
+    activeWorkers: [3, 3, 2, data.worker.status === 'working' ? 1 : 0],
+    predictionLength: 3
+  }).catch((error) => chronosUnavailableForecast(error instanceof Error ? error.message : 'Chronos unavailable'));
+  const recommendedMinutes = Math.min(30, Math.max(5, baseMinutes + (chronos.modelStatus === 'READY' && chronos.suggestedAdditionalCrew > 0 ? 5 : 0)));
+
+  return {
+    workerId,
+    recommendedMinutes,
+    fatigueScore: data.worker.fatigue,
+    fatigueLevel: data.worker.fatigue >= 85 ? 'CRITICAL' : data.worker.fatigue >= 65 ? 'HIGH' : data.worker.fatigue >= 40 ? 'MEDIUM' : 'LOW',
+    chronosStatus: chronos.modelStatus,
+    reason: chronos.modelStatus === 'READY'
+      ? `Fatigue score recommends ${baseMinutes} min; Chronos context ${chronos.suggestedAdditionalCrew > 0 ? 'adds recovery buffer for productivity risk' : 'keeps standard recovery'}.`
+      : `Fatigue score recommends ${baseMinutes} min. Chronos unavailable, so safety fallback is used.`
+  };
+}
+
+export async function grantSupabaseWorkerRest(workerId: string, minutes?: number) {
+  if (shouldUseSupabaseIoTModel()) {
+    const recommendation = await getSupabaseWorkerRestRecommendation(workerId);
+    return {
+      ...(await getSupabaseIoTWorkerAppData(workerId)),
+      recommendation: {
+        ...recommendation,
+        recommendedMinutes: Math.max(5, Math.min(60, Math.round(minutes ?? recommendation.recommendedMinutes)))
+      },
+      action: { ok: true, fallback: true }
+    };
+  }
+
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const recommendation = await getSupabaseWorkerRestRecommendation(workerId);
+  const plannedMinutes = Math.max(5, Math.min(60, Math.round(minutes ?? recommendation.recommendedMinutes)));
+  const device = await getSupabaseDeviceForWorker(workerId);
+  const now = new Date();
+  const endsAt = new Date(now.getTime() + plannedMinutes * 60_000);
+  const breakSessionId = crypto.randomUUID();
+
+  await insertRows('break_sessions', [{
+    id: breakSessionId,
+    worker_id: workerId,
+    task_id: data.tasks[0]?.id ?? null,
+    device_id: device?.id ?? `worker-app-${workerId}`,
+    source: 'MANAGER_ASSIGNED_REST',
+    status: 'BREAK_ACTIVE',
+    planned_minutes: plannedMinutes,
+    started_at: now.toISOString(),
+    ends_at: endsAt.toISOString(),
+    completed_at: null,
+    risk_evaluation_id: null
+  }]);
+  await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status: 'break' });
+
+  if (data.tasks[0]) {
+    await patchRows('tasks', `id=eq.${encodeFilterValue(data.tasks[0].id)}`, {
+      status: 'Paused for rest',
+      due: `${plannedMinutes}m rest`
+    });
+  }
+
+  await createSupabaseNotification({
+    title: 'Rest assigned',
+    detail: `Manager assigned ${plannedMinutes} minutes of rest. Return around ${formatTime(endsAt)}.`,
+    tone: 'warning',
+    targetLabel: 'View rest',
+    targetSection: 'workers',
+    targetWorkerId: workerId
+  });
+
+  return {
+    ...(await getSupabaseWorkerAppData(workerId)),
+    recommendation: {
+      ...recommendation,
+      recommendedMinutes: plannedMinutes
+    },
+    breakSessionId
+  };
+}
+
 export async function requestSupabaseWorkerRest(workerId: string) {
+  if (shouldUseSupabaseIoTModel()) {
+    return { ...(await getSupabaseIoTWorkerAppData(workerId)), action: { ok: true, fallback: true } };
+  }
+
   const data = await getSupabaseWorkerAppData(workerId);
 
   if (!data.worker) {
@@ -337,6 +556,10 @@ export async function requestSupabaseWorkerRest(workerId: string) {
 }
 
 export async function triggerSupabaseWorkerSos(workerId: string) {
+  if (shouldUseSupabaseIoTModel()) {
+    return { ...(await getSupabaseIoTWorkerAppData(workerId)), action: { ok: true, fallback: true, eventType: 'SOS' } };
+  }
+
   const data = await getSupabaseWorkerAppData(workerId);
 
   if (!data.worker) {
@@ -659,6 +882,7 @@ async function createSupabaseNotification(input: Omit<Notification, 'id' | 'read
     target_label: input.targetLabel,
     target_section: input.targetSection,
     target_worker_id: input.targetWorkerId ?? null,
+    created_at: input.createdAt ?? new Date().toISOString(),
     read: false
   }]);
 }
@@ -666,6 +890,495 @@ async function createSupabaseNotification(input: Omit<Notification, 'id' | 'read
 async function getSupabaseDeviceForWorker(workerId: string) {
   const [device] = await selectRows<SupabaseDeviceRow>('iot_devices', `select=*&assigned_worker_id=eq.${encodeFilterValue(workerId)}&limit=1`);
   return device ?? null;
+}
+
+async function getSupabaseIoTWorkerAppData(workerId: string) {
+  const snapshot = await getSupabaseIoTSnapshot();
+  const worker = snapshot.workers.find((item) => item.id === workerId) ?? snapshot.workers[0] ?? null;
+
+  return {
+    worker,
+    tasks: worker ? snapshot.tasks.filter((task) => task.owner === worker.name || task.owner === 'Unassigned') : snapshot.tasks,
+    notifications: snapshot.notifications.filter((notification) => !notification.targetWorkerId || notification.targetWorkerId === workerId),
+    currentBreak: snapshot.restBreaks[0] ? {
+      id: `iot-rest-${snapshot.restBreaks[0].id}`,
+      status: snapshot.restBreaks[0].status ?? 'PENDING',
+      plannedMinutes: Math.max(5, Math.round((snapshot.restBreaks[0].work_duration_before_break ?? 0) / 60)),
+      startedAt: snapshot.restBreaks[0].created_at,
+      endsAt: null
+    } : null,
+    latestRisk: snapshot.latestRisk[0] ?? null,
+    activeIncident: snapshot.activeIncidents[0] ?? null
+  };
+}
+
+async function getSupabaseIoTSnapshot() {
+  const [environmentRows, workHourRows, warningRows, inactivityRows, restBreakRows] = await Promise.all([
+    safeSelectRows<IoTEnvironmentConditionRow>('environment_condition', 'select=*&order=created_at.desc&limit=30'),
+    safeSelectRows<IoTWorkHoursRow>('work_hours', 'select=*&order=start_time.desc&limit=50'),
+    safeSelectRows<IoTWarningRow>('warning', 'select=*&order=created_at.desc&limit=50'),
+    safeSelectRows<IoTInactivityLogRow>('inactivity_log', 'select=*&order=created_at.desc&limit=50'),
+    safeSelectRows<IoTRestBreakRow>('rest_break', 'select=*&order=created_at.desc&limit=50')
+  ]);
+  const latestEnvironment = environmentRows[0] ?? null;
+  const latestWorkHour = workHourRows[0] ?? null;
+  const latestClearWarning = warningRows.find((row) => isWorkerClearedWarning(row)) ?? null;
+  const latestWarning = warningRows.find((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning)) ?? null;
+  const activeRestBreak = restBreakRows.find((row) => (row.status ?? '').toUpperCase() === 'PENDING') ?? restBreakRows[0] ?? null;
+  const primaryWorker = makeIoTWorker(latestWorkHour, latestWarning, activeRestBreak, inactivityRows[0] ?? null, latestEnvironment);
+  const workers = [
+    primaryWorker,
+    ...fallbackWorkers.slice(1).map((worker) => ({
+      ...worker,
+      status: 'waiting' as WorkerStatus,
+      task: 'Standby support',
+      environment: makeStubWorkerEnvironment(worker)
+    }))
+  ];
+  const tasks = makeIoTTasks(primaryWorker, latestEnvironment, latestWorkHour);
+  const activeIncidents = warningRows
+    .filter((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning))
+    .map((row) => mapIoTWarningIncident(row, primaryWorker))
+    .filter((incident): incident is IoTIncident => Boolean(incident));
+  const incidentHistory = warningRows
+    .map((row) => mapIoTWarningIncident(row, primaryWorker))
+    .filter((incident): incident is IoTIncident => Boolean(incident));
+  const restRequests = restBreakRows.map((row) => mapIoTRestRequest(row, primaryWorker));
+  const nearMissReports = [
+    ...inactivityRows.map((row) => mapIoTInactivityNearMiss(row, primaryWorker)),
+    ...warningRows
+      .filter((row) => normalizeWarningEvent(row.event_type) === 'JATUH')
+      .map((row) => mapIoTWarningNearMiss(row, primaryWorker))
+  ];
+  const latestRisk = makeIoTRiskEvaluations(warningRows, latestEnvironment, primaryWorker);
+  const latestFatigue = [{
+    id: `iot-fatigue-${latestWorkHour?.id ?? 'stub'}`,
+    worker_id: primaryWorker.id,
+    device_id: 'iot-supabase-stream',
+    task_id: tasks[0]?.id ?? null,
+    zone_id: primaryWorker.zone,
+    fatigue_score: primaryWorker.fatigue,
+    fatigue_level: primaryWorker.fatigue >= 75 ? 'HIGH' : primaryWorker.fatigue >= 45 ? 'MEDIUM' : 'LOW',
+    intervention: primaryWorker.fatigue >= 75 ? 'REST_REQUIRED' : 'MONITOR',
+    break_minutes: primaryWorker.fatigue >= 75 ? 15 : 0,
+    reasons: JSON.stringify(makeIoTFatigueReasons(latestWorkHour, inactivityRows[0] ?? null, activeRestBreak)),
+    evaluated_at: latestWorkHour?.stop_time ?? latestWorkHour?.start_time ?? new Date().toISOString()
+  }];
+
+  return {
+    workers,
+    tasks,
+    notifications: makeIoTNotifications(warningRows, inactivityRows, restBreakRows, latestEnvironment, primaryWorker),
+    devices: [makeIoTDevice(latestEnvironment, latestWorkHour)],
+    activeIncidents,
+    incidentHistory,
+    nearMissReports,
+    restRequests,
+    latestRisk,
+    latestFatigue,
+    restBreaks: restBreakRows
+  };
+}
+
+async function safeSelectRows<T>(tableName: string, query: string): Promise<T[]> {
+  try {
+    return await selectRows<T>(tableName, query);
+  } catch (error) {
+    if (String(error).includes('(401)')) {
+      throw error;
+    }
+
+    console.warn(`Supabase ${tableName} unavailable, using stub data:`, error);
+    return [];
+  }
+}
+
+function makeIoTWorker(
+  latestWorkHour: IoTWorkHoursRow | null,
+  latestWarning: IoTWarningRow | null,
+  activeRestBreak: IoTRestBreakRow | null,
+  latestInactivity: IoTInactivityLogRow | null,
+  latestEnvironment: IoTEnvironmentConditionRow | null
+): Worker {
+  const base = fallbackWorkers[0];
+  const event = normalizeWarningEvent(latestWarning?.event_type);
+  const durationSeconds = latestWorkHour?.duration_seconds ?? secondsBetween(latestWorkHour?.start_time, latestWorkHour?.stop_time);
+  const fatigue = calculateIoTFatigue(durationSeconds, latestInactivity?.duration_seconds, latestEnvironment, Boolean(activeRestBreak));
+  const status: WorkerStatus = event === 'SOS' || event === 'JATUH'
+    ? 'emergency'
+    : activeRestBreak
+      ? 'break'
+      : latestWorkHour && !latestWorkHour.stop_time
+        ? 'working'
+        : 'waiting';
+
+  return {
+    ...base,
+    id: base.id,
+    name: base.name,
+    role: base.role,
+    task: latestWorkHour ? 'IoT monitored field work' : base.task,
+    status,
+    zone: 'IoT Site',
+    time: formatDurationClock(durationSeconds),
+    workload: fatigue >= 70 ? 'High' : fatigue >= 45 ? 'Medium' : 'Low',
+    fatigue,
+    match: Math.max(58, 100 - fatigue),
+    environment: makeLiveWorkerEnvironment(latestEnvironment, latestWarning, latestInactivity, fatigue)
+  };
+}
+
+function makeIoTTasks(worker: Worker, environment: IoTEnvironmentConditionRow | null, workHour: IoTWorkHoursRow | null): Task[] {
+  const primary = fallbackTasks[0];
+
+  return [
+    {
+      ...primary,
+      id: 'iot-live-shift',
+      title: 'IoT monitored field work',
+      owner: worker.name,
+      location: worker.zone,
+      taskTemplate: 'Field safety operation',
+      project: 'Kawal IoT Integration',
+      zone: worker.zone,
+      quantity: Math.max(1, Math.round((workHour?.duration_seconds ?? 0) / 60)),
+      unit: 'minutes',
+      deadline: workHour?.stop_time ?? 'Live shift',
+      priority: worker.status === 'emergency' ? 'Critical' : 'Medium',
+      temperatureC: environment?.avg_suhu ?? null,
+      humidityPct: environment?.avg_kelembaban ?? null,
+      workload: worker.workload,
+      notes: environment
+        ? `Supabase IoT: ${environment.avg_suhu ?? '-'}C, ${environment.avg_kelembaban ?? '-'}% humidity, ${environment.avg_tekanan ?? '-'} hPa.`
+        : 'Supabase IoT tables are connected; waiting for environment_condition rows.',
+      status: worker.status === 'emergency' ? 'Safety hold' : worker.status === 'working' ? 'In Progress' : 'Open',
+      due: workHour?.stop_reason ?? 'Live',
+      tone: worker.status === 'emergency' ? 'danger' : worker.fatigue >= 65 ? 'warning' : 'neutral'
+    },
+    ...fallbackTasks.slice(1)
+  ];
+}
+
+function createSupabaseIoTStubTask(input: CreateTaskInput): Task {
+  const workload = inferWorkload(input.taskTemplate, input.quantity);
+  const base = fallbackTasks[0];
+
+  return {
+    ...base,
+    id: slugify(`${input.taskTemplate}-${Date.now()}`),
+    title: input.taskTemplate,
+    owner: input.owner?.trim() || 'Unassigned',
+    location: input.zone,
+    taskTemplate: input.taskTemplate,
+    project: input.project,
+    zone: input.zone,
+    quantity: input.quantity,
+    unit: input.unit,
+    deadline: input.deadline,
+    priority: input.priority,
+    temperatureC: null,
+    humidityPct: null,
+    workload,
+    notes: input.notes ?? 'Supabase IoT mode stub; create a tasks table later to persist this.',
+    status: 'Open',
+    due: input.deadline,
+    tone: input.priority === 'Critical' ? 'danger' : input.priority === 'High' ? 'warning' : 'neutral'
+  };
+}
+
+function makeIoTNotifications(
+  warnings: IoTWarningRow[],
+  inactivityRows: IoTInactivityLogRow[],
+  restBreakRows: IoTRestBreakRow[],
+  environment: IoTEnvironmentConditionRow | null,
+  worker: Worker
+): Notification[] {
+  const warningNotifications = warnings.slice(0, 12).map((row) => mapIoTWarningNotification(row, worker));
+  const inactivityNotifications = inactivityRows.slice(0, 4).map((row) => ({
+    id: `iot-inactivity-${row.id}`,
+    title: 'Worker inactivity',
+    detail: `No movement detected for ${row.duration_seconds ?? 0} seconds during work session ${row.work_hours_id ?? '-'}.`,
+    tone: 'warning' as Tone,
+    targetLabel: 'Open worker',
+    targetSection: 'workers' as ManagerSection,
+    targetWorkerId: worker.id,
+    createdAt: row.created_at,
+    read: false
+  }));
+  const restNotifications = restBreakRows.slice(0, 4).map((row) => ({
+    id: `iot-rest-${row.id}`,
+    title: 'Rest break signal',
+    detail: `Rest break ${row.status ?? 'PENDING'} after ${row.work_duration_before_break ?? 0} seconds of work.`,
+    tone: 'warning' as Tone,
+    targetLabel: 'Review rest',
+    targetSection: 'workers' as ManagerSection,
+    targetWorkerId: worker.id,
+    createdAt: row.created_at,
+    read: false
+  }));
+  const environmentNotification = environment ? [{
+    id: `iot-environment-${environment.id}`,
+    title: 'Environment updated',
+    detail: `${environment.avg_suhu ?? '-'}C, ${environment.avg_kelembaban ?? '-'}% humidity, ${environment.avg_tekanan ?? '-'} hPa.`,
+    tone: (Number(environment.avg_suhu ?? 0) >= 32 || Number(environment.avg_kelembaban ?? 0) >= 80 ? 'warning' : 'neutral') as Tone,
+    targetLabel: 'Open IoT',
+    targetSection: 'iot' as ManagerSection,
+    createdAt: environment.created_at,
+    read: false
+  }] : [];
+
+  return [...warningNotifications, ...inactivityNotifications, ...restNotifications, ...environmentNotification, ...fallbackNotifications]
+    .sort((left, right) => new Date(right.createdAt ?? '').getTime() - new Date(left.createdAt ?? '').getTime());
+}
+
+function mapIoTWarningNotification(row: IoTWarningRow, worker: Worker): Notification {
+  const event = normalizeWarningEvent(row.event_type);
+  const danger = event === 'SOS' || event === 'JATUH';
+  const clearedByWorker = isWorkerClearedWarning(row);
+
+  return {
+    id: `iot-warning-${row.id}`,
+    title: clearedByWorker ? 'SOS resolved' : event === 'SOS' ? 'SOS' : event === 'JATUH' ? 'Fall detected' : event === 'TIDAK BERGERAK' ? 'No movement' : 'Warning cleared',
+    detail: clearedByWorker
+      ? `${worker.name} turned off the SOS alarm from the wearable.`
+      : `${event} event from Supabase warning table. Buzzer: ${row.status_buzzer ?? '-'}.`,
+    tone: danger ? 'danger' : event === 'BATAL/NORMAL' ? 'success' : 'warning',
+    targetLabel: danger || clearedByWorker ? 'Open incident' : 'Open IoT',
+    targetSection: danger || clearedByWorker ? 'incidents' : 'iot',
+    targetWorkerId: worker.id,
+    createdAt: row.created_at,
+    read: false
+  };
+}
+
+function makeIoTDevice(environment: IoTEnvironmentConditionRow | null, workHour: IoTWorkHoursRow | null): IoTDevice {
+  const lastSeen = environment?.created_at ?? workHour?.stop_time ?? workHour?.start_time ?? null;
+
+  return {
+    id: 'iot-supabase-stream',
+    mqttClientId: 'supabase-iot-tables',
+    name: 'Supabase IoT Stream',
+    deviceType: 'TABLE_STREAM',
+    status: lastSeen ? 'ONLINE' : 'STUB',
+    firmwareVersion: null,
+    assignedWorkerId: fallbackWorkers[0]?.id ?? null,
+    assignedSiteId: 'kawal-site',
+    assignedZoneId: 'IoT Site',
+    assignedTaskId: 'iot-live-shift',
+    lastSeenAt: lastSeen,
+    batteryPct: null,
+    signalStrength: null
+  };
+}
+
+function mapIoTWarningIncident(row: IoTWarningRow, worker: Worker): IoTIncident | null {
+  const event = normalizeWarningEvent(row.event_type);
+
+  if (!['SOS', 'JATUH', 'TIDAK BERGERAK', 'BATAL/NORMAL'].includes(event)) {
+    return null;
+  }
+
+  return {
+    id: `iot-incident-${row.id}`,
+    worker_id: worker.id,
+    task_id: 'iot-live-shift',
+    zone_id: worker.zone,
+    state: isOpenWarning(row) ? 'OPEN' : 'RESOLVED',
+    trigger_source: event === 'BATAL/NORMAL' ? 'WORKER_CANCELLED_ALERT' : event,
+    device_id: 'iot-supabase-stream',
+    opened_at: row.created_at,
+    escalation_level: event === 'SOS' || event === 'JATUH' ? 1 : 0
+  };
+}
+
+function mapIoTRestRequest(row: IoTRestBreakRow, worker: Worker) {
+  return {
+    id: `iot-rest-${row.id}`,
+    worker_id: worker.id,
+    device_id: 'iot-supabase-stream',
+    task_id: 'iot-live-shift',
+    zone_id: worker.zone,
+    source: 'SUPABASE_REST_BREAK',
+    status: row.status ?? 'PENDING',
+    requested_at: row.created_at,
+    risk_score_at_request: Math.min(100, Math.round((row.work_duration_before_break ?? 0) / 60)),
+    fatigue_score_at_request: worker.fatigue,
+    decision: null,
+    decision_reason: null,
+    break_session_id: null
+  };
+}
+
+function mapIoTInactivityNearMiss(row: IoTInactivityLogRow, worker: Worker) {
+  return {
+    id: `iot-inactivity-${row.id}`,
+    device_id: 'iot-supabase-stream',
+    worker_id: worker.id,
+    task_id: 'iot-live-shift',
+    zone_id: worker.zone,
+    window_end: row.idle_end_time ?? row.created_at,
+    maximum_acceleration_g: 0,
+    movement_state: 'INACTIVE',
+    inactive_seconds: row.duration_seconds ?? 0,
+    impact_detected: 0,
+    fall_candidate: 0
+  };
+}
+
+function mapIoTWarningNearMiss(row: IoTWarningRow, worker: Worker) {
+  return {
+    id: `iot-warning-fall-${row.id}`,
+    device_id: 'iot-supabase-stream',
+    worker_id: worker.id,
+    task_id: 'iot-live-shift',
+    zone_id: worker.zone,
+    window_end: row.created_at,
+    maximum_acceleration_g: 1,
+    movement_state: 'FALL_CANDIDATE',
+    inactive_seconds: 0,
+    impact_detected: 1,
+    fall_candidate: 1
+  };
+}
+
+function makeIoTRiskEvaluations(warnings: IoTWarningRow[], environment: IoTEnvironmentConditionRow | null, worker: Worker) {
+  const latestWarning = warnings.find((row) => normalizeWarningEvent(row.event_type) !== 'BATAL/NORMAL');
+  const event = normalizeWarningEvent(latestWarning?.event_type);
+  const environmentRisk = Number(environment?.avg_suhu ?? 0) >= 32 || Number(environment?.avg_kelembaban ?? 0) >= 80 ? 18 : 0;
+  const eventRisk = event === 'SOS' || event === 'JATUH' ? 82 : event === 'TIDAK BERGERAK' ? 58 : 24;
+  const riskScore = Math.min(100, Math.max(eventRisk, worker.fatigue) + environmentRisk);
+
+  return [{
+    id: `iot-risk-${latestWarning?.id ?? environment?.id ?? 'stub'}`,
+    worker_id: worker.id,
+    device_id: 'iot-supabase-stream',
+    task_id: 'iot-live-shift',
+    zone_id: worker.zone,
+    risk_score: riskScore,
+    risk_level: riskScore >= 85 ? 'CRITICAL' : riskScore >= 65 ? 'HIGH' : riskScore >= 40 ? 'MEDIUM' : 'LOW',
+    intervention: riskScore >= 85 ? 'OPEN_INCIDENT' : riskScore >= 65 ? 'SUPERVISOR_REVIEW' : 'MONITOR',
+    break_minutes: riskScore >= 65 ? 15 : 0,
+    reasons: JSON.stringify([
+      latestWarning ? `warning.${event}` : 'no active warning event',
+      environment ? `environment ${environment.avg_suhu ?? '-'}C/${environment.avg_kelembaban ?? '-'}%` : 'environment stub'
+    ]),
+    evaluated_at: latestWarning?.created_at ?? environment?.created_at ?? new Date().toISOString()
+  }];
+}
+
+function calculateIoTFatigue(
+  durationSeconds?: number | null,
+  inactivitySeconds?: number | null,
+  environment?: IoTEnvironmentConditionRow | null,
+  hasRestBreak?: boolean
+) {
+  const workMinutes = Math.max(0, Math.round((durationSeconds ?? 0) / 60));
+  const inactivityLoad = Math.min(18, Math.round((inactivitySeconds ?? 0) / 10));
+  const heatLoad = Number(environment?.avg_suhu ?? 0) >= 30 ? 10 : 0;
+  const humidityLoad = Number(environment?.avg_kelembaban ?? 0) >= 75 ? 8 : 0;
+  const restLoad = hasRestBreak ? 18 : 0;
+  return Math.min(96, Math.max(22, 22 + Math.round(workMinutes / 3) + inactivityLoad + heatLoad + humidityLoad + restLoad));
+}
+
+function makeLiveWorkerEnvironment(
+  environment: IoTEnvironmentConditionRow | null,
+  latestWarning: IoTWarningRow | null,
+  latestInactivity: IoTInactivityLogRow | null,
+  fatigue: number
+) {
+  const temperature = environment?.avg_suhu ?? null;
+  const humidity = environment?.avg_kelembaban ?? null;
+  const pressure = environment?.avg_tekanan ?? null;
+  const warningEvent = normalizeWarningEvent(latestWarning?.event_type);
+  const factors = [
+    temperature !== null && temperature >= 30 ? `Heat load ${temperature.toFixed(1)}C` : null,
+    humidity !== null && humidity >= 75 ? `Humidity load ${humidity.toFixed(0)}%` : null,
+    pressure !== null && (pressure < 1008 || pressure > 1013) ? `Pressure shift ${pressure.toFixed(1)} hPa` : null,
+    latestInactivity ? `Inactive ${latestInactivity.duration_seconds ?? 0}s` : null,
+    ['SOS', 'JATUH', 'TIDAK BERGERAK'].includes(warningEvent) ? `Warning event ${warningEvent}` : null
+  ].filter((factor): factor is string => Boolean(factor));
+  const environmentLoad = (temperature !== null && temperature >= 30 ? 10 : 0)
+    + (humidity !== null && humidity >= 75 ? 8 : 0)
+    + (pressure !== null && (pressure < 1008 || pressure > 1013) ? 4 : 0);
+  const warningLoad = warningEvent === 'SOS' || warningEvent === 'JATUH' ? 36 : warningEvent === 'TIDAK BERGERAK' ? 18 : 0;
+  const riskScore = Math.min(100, Math.max(18, fatigue + environmentLoad + warningLoad));
+
+  return {
+    source: 'live' as const,
+    temperatureC: temperature,
+    humidityPct: humidity,
+    pressureHpa: pressure,
+    recordedAt: environment?.created_at,
+    riskScore,
+    riskLevel: riskScore >= 85 ? 'CRITICAL' as const : riskScore >= 65 ? 'HIGH' as const : riskScore >= 40 ? 'MEDIUM' as const : 'LOW' as const,
+    riskFactors: factors.length ? factors : ['Live IoT environment is within normal range'],
+    summary: environment
+      ? 'Live environment_condition is assigned to worker@gmail.com wearable.'
+      : 'Waiting for environment_condition rows from the IoT device.'
+  };
+}
+
+function makeStubWorkerEnvironment(worker: Worker) {
+  const riskScore = Math.max(18, Math.min(62, worker.fatigue + (worker.workload === 'High' ? 12 : worker.workload === 'Medium' ? 8 : 4)));
+
+  return {
+    source: 'stub' as const,
+    temperatureC: 24,
+    humidityPct: 60,
+    pressureHpa: 1010,
+    riskScore,
+    riskLevel: riskScore >= 65 ? 'HIGH' as const : riskScore >= 40 ? 'MEDIUM' as const : 'LOW' as const,
+    riskFactors: ['No assigned IoT device yet', `${worker.workload} workload baseline`, `${worker.fatigue}% fatigue baseline`],
+    summary: 'Stub environment until this worker receives a dedicated IoT device.'
+  };
+}
+
+function makeIoTFatigueReasons(workHour: IoTWorkHoursRow | null, inactivity: IoTInactivityLogRow | null, restBreak: IoTRestBreakRow | null) {
+  return [
+    workHour ? `work_hours.duration_seconds=${workHour.duration_seconds ?? 0}` : 'work_hours stub',
+    inactivity ? `inactivity_log.duration_seconds=${inactivity.duration_seconds ?? 0}` : 'no inactivity row',
+    restBreak ? `rest_break.status=${restBreak.status ?? 'PENDING'}` : 'no rest break row'
+  ];
+}
+
+function normalizeWarningEvent(value?: string | null) {
+  return (value ?? '').trim().toUpperCase() || 'UNKNOWN';
+}
+
+function isOpenWarning(row: IoTWarningRow) {
+  const event = normalizeWarningEvent(row.event_type);
+  return event !== 'BATAL/NORMAL' && (row.status_buzzer ?? '').toUpperCase() === 'NYALA';
+}
+
+function isWorkerClearedWarning(row: IoTWarningRow) {
+  return normalizeWarningEvent(row.event_type) === 'BATAL/NORMAL' && (row.status_buzzer ?? '').toUpperCase() === 'MATI';
+}
+
+function isAfterWarningClear(row: IoTWarningRow, latestClearWarning: IoTWarningRow | null) {
+  if (!latestClearWarning) {
+    return true;
+  }
+
+  return new Date(row.created_at).getTime() > new Date(latestClearWarning.created_at).getTime();
+}
+
+function secondsBetween(start?: string | null, stop?: string | null) {
+  if (!start) return 0;
+  const startTime = new Date(start).getTime();
+  const stopTime = stop ? new Date(stop).getTime() : Date.now();
+
+  if (!Number.isFinite(startTime) || !Number.isFinite(stopTime)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round((stopTime - startTime) / 1000));
+}
+
+function formatDurationClock(seconds?: number | null) {
+  const totalMinutes = Math.max(0, Math.round((seconds ?? 0) / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}:${String(minutes).padStart(2, '0')}`;
 }
 
 function makeSupabaseEnvelope(device: SupabaseDeviceRow, eventType: string, payload: Record<string, unknown>) {
@@ -721,7 +1434,7 @@ async function supabaseRequest<T>(
   assertSupabaseConfigured();
 
   const separator = query ? `?${query}` : '';
-  const response = await fetch(`${supabaseUrl}/rest/v1/${tableName}${separator}`, {
+  const response = await fetch(`${supabaseRestUrl}/${tableName}${separator}`, {
     method: init.method ?? 'GET',
     headers: {
       apikey: supabaseKey,
@@ -810,6 +1523,7 @@ function mapNotification(row: SupabaseNotificationRow): Notification {
     targetLabel: row.target_label,
     targetSection: row.target_section as ManagerSection,
     targetWorkerId: row.target_worker_id ?? undefined,
+    createdAt: row.created_at ?? undefined,
     read: Boolean(row.read)
   };
 }
@@ -963,6 +1677,23 @@ function stringOrNull(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function parseWorkerTimeMinutes(value: string) {
+  const [hours, minutes] = value.split(':').map(Number);
+
+  if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+    return hours * 60 + minutes;
+  }
+
+  return 0;
+}
+
+function formatTime(value: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(value);
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -1029,6 +1760,7 @@ type SupabaseNotificationRow = {
   target_label: string;
   target_section: string;
   target_worker_id: string | null;
+  created_at?: string;
   read: boolean;
 };
 
@@ -1058,6 +1790,46 @@ type SupabaseIncidentRow = {
   device_id: string;
   opened_at: string;
   escalation_level: number;
+};
+
+type IoTEnvironmentConditionRow = {
+  id: number | string;
+  created_at: string;
+  avg_suhu: number | null;
+  avg_kelembaban: number | null;
+  avg_tekanan: number | null;
+};
+
+type IoTWorkHoursRow = {
+  id: number | string;
+  start_time: string;
+  stop_time: string | null;
+  duration_seconds: number | null;
+  stop_reason: string | null;
+};
+
+type IoTWarningRow = {
+  id: number | string;
+  created_at: string;
+  event_type: string | null;
+  status_buzzer: string | null;
+};
+
+type IoTInactivityLogRow = {
+  id: number | string;
+  created_at: string;
+  work_hours_id: number | string | null;
+  duration_seconds: number | null;
+  idle_start_time: string | null;
+  idle_end_time: string | null;
+};
+
+type IoTRestBreakRow = {
+  id: number | string;
+  created_at: string;
+  work_duration_before_break: number | null;
+  status: string | null;
+  work_hours_id: number | string | null;
 };
 
 export const supabaseFallbackData: WorkforceData = {

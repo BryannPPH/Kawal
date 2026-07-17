@@ -120,6 +120,7 @@ function createTables() {
       target_label TEXT NOT NULL,
       target_section TEXT NOT NULL,
       target_worker_id TEXT,
+      created_at TEXT NOT NULL DEFAULT '',
       read INTEGER NOT NULL DEFAULT 0
     );
 
@@ -352,7 +353,9 @@ function createTables() {
   addColumnIfMissing('tasks', 'task_workload', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'notes', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'scheduler_recommendation', "TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing('notifications', 'created_at', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('rest_requests', 'fatigue_score_at_request', 'INTEGER');
+  backfillNotificationTimestamps();
 }
 
 function seedDatabase() {
@@ -464,14 +467,14 @@ function seedTasks() {
 function seedNotifications() {
   const insertNotification = db.prepare(`
     INSERT OR IGNORE INTO notifications (
-      id, title, detail, tone, target_label, target_section, target_worker_id, read
+      id, title, detail, tone, target_label, target_section, target_worker_id, created_at, read
     ) VALUES (
-      $id, $title, $detail, $tone, $targetLabel, $targetSection, $targetWorkerId, $read
+      $id, $title, $detail, $tone, $targetLabel, $targetSection, $targetWorkerId, $createdAt, $read
     )
   `);
 
   const insertMany = db.transaction((seedNotifications: Notification[]) => {
-    for (const notification of seedNotifications) {
+    for (const [index, notification] of seedNotifications.entries()) {
       insertNotification.run({
         $id: notification.id,
         $title: notification.title,
@@ -480,6 +483,7 @@ function seedNotifications() {
         $targetLabel: notification.targetLabel,
         $targetSection: notification.targetSection,
         $targetWorkerId: notification.targetWorkerId ?? null,
+        $createdAt: notification.createdAt ?? new Date(Date.now() - index * 8 * 60_000).toISOString(),
         $read: notification.read ? 1 : 0
       });
     }
@@ -548,6 +552,7 @@ type NotificationRow = {
   target_label: string;
   target_section: ManagerSection;
   target_worker_id: string | null;
+  created_at: string;
   read: number;
 };
 
@@ -676,8 +681,8 @@ export async function autoAssignTask(taskId: string): Promise<Task | null> {
       .run(taskId, task.zone, new Date().toISOString(), bestWorker.workerId);
     db.prepare(`
       INSERT INTO notifications (
-        id, title, detail, tone, target_label, target_section, target_worker_id, read
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        id, title, detail, tone, target_label, target_section, target_worker_id, created_at, read
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run(
       `task-assigned-${crypto.randomUUID()}`,
       'New task assigned',
@@ -685,7 +690,8 @@ export async function autoAssignTask(taskId: string): Promise<Task | null> {
       'neutral',
       'Open task',
       'tasks',
-      bestWorker.workerId
+      bestWorker.workerId,
+      new Date().toISOString()
     );
   })();
 
@@ -694,7 +700,10 @@ export async function autoAssignTask(taskId: string): Promise<Task | null> {
 }
 
 export function getNotifications(): Notification[] {
-  return db.query<NotificationRow, []>('SELECT * FROM notifications ORDER BY rowid').all().map(mapNotification);
+  return db
+    .query<NotificationRow, []>("SELECT * FROM notifications ORDER BY COALESCE(NULLIF(created_at, ''), '1970-01-01T00:00:00.000Z') DESC, rowid DESC")
+    .all()
+    .map(mapNotification);
 }
 
 export async function getWorkforceData(): Promise<WorkforceData> {
@@ -721,6 +730,7 @@ function mapNotification(row: NotificationRow): Notification {
     targetLabel: row.target_label,
     targetSection: row.target_section,
     targetWorkerId: row.target_worker_id ?? undefined,
+    createdAt: row.created_at || undefined,
     read: Boolean(row.read)
   };
 }
@@ -957,6 +967,25 @@ function addColumnIfMissing(tableName: string, columnName: string, definition: s
   if (!columns.some((column) => column.name === columnName)) {
     db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
   }
+}
+
+function backfillNotificationTimestamps() {
+  const missingRows = db
+    .query<{ id: string }, []>("SELECT id FROM notifications WHERE created_at = '' ORDER BY rowid DESC")
+    .all();
+
+  if (!missingRows.length) {
+    return;
+  }
+
+  const updateNotification = db.prepare('UPDATE notifications SET created_at = ? WHERE id = ?');
+  const now = Date.now();
+
+  db.transaction(() => {
+    for (const [index, row] of missingRows.entries()) {
+      updateNotification.run(new Date(now - index * 8 * 60_000).toISOString(), row.id);
+    }
+  })();
 }
 
 function slugify(value: string) {

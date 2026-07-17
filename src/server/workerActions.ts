@@ -2,10 +2,21 @@ import type { ManagerSection } from '../types/navigation';
 import type { Notification, Tone, WorkerStatus } from '../types/workforce';
 import { getNotifications, getTasks, getWorkers, markNotificationRead } from './database';
 import { db } from './database';
+import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
+import { computeFatigue } from './fatigueEngine';
 import { getCurrentBreak, getLatestRisk, processIoTMessage, topicPrefix } from './iot';
 import { getLatestPpeCheck, runPpeCheck } from './ppe';
 
 type WorkerActionStatus = Extract<WorkerStatus, 'waiting' | 'working' | 'break' | 'done'>;
+
+export type WorkerRestRecommendation = {
+  workerId: string;
+  recommendedMinutes: number;
+  fatigueScore: number;
+  fatigueLevel: string;
+  chronosStatus: 'READY' | 'UNAVAILABLE';
+  reason: string;
+};
 
 export async function getWorkerAppData(workerId: string) {
   const worker = getWorkers().find((item) => item.id === workerId) ?? null;
@@ -156,6 +167,89 @@ export async function requestWorkerRest(workerId: string) {
   return { ...await getWorkerAppData(workerId), action: result };
 }
 
+export async function getWorkerRestRecommendation(workerId: string): Promise<WorkerRestRecommendation> {
+  const worker = getRequiredWorker(workerId);
+  const continuousWorkMinutes = parseWorkerTimeMinutes(worker.time);
+  const fatigue = computeFatigue({
+    continuousWorkMinutes,
+    workloadLevel: worker.workload,
+    restHistoryMinutes: getRecentRestMinutes(workerId)
+  });
+  const fatigueScore = Math.max(worker.fatigue, fatigue.fatigueScore);
+  const baseMinutes = fatigue.breakMinutes || (fatigueScore >= 75 ? 20 : fatigueScore >= 55 ? 15 : fatigueScore >= 35 ? 10 : 5);
+  const chronos = await forecastProductivity({
+    historicalCompletedQuantity: [2, 3, 4, 4],
+    workerHours: [2, 2.5, 3, Math.max(1, continuousWorkMinutes / 60)],
+    breakMinutes: [5, 10, baseMinutes, baseMinutes],
+    activeWorkers: [3, 3, 2, worker.status === 'working' ? 1 : 0],
+    predictionLength: 3
+  }).catch((error) => chronosUnavailableForecast(error instanceof Error ? error.message : 'Chronos unavailable'));
+  const chronosBuffer = chronos.modelStatus === 'READY' && chronos.suggestedAdditionalCrew > 0 ? 5 : 0;
+  const recommendedMinutes = Math.min(30, Math.max(5, baseMinutes + chronosBuffer));
+
+  return {
+    workerId,
+    recommendedMinutes,
+    fatigueScore,
+    fatigueLevel: fatigueScore >= 85 ? 'CRITICAL' : fatigueScore >= 65 ? 'HIGH' : fatigueScore >= 40 ? 'MEDIUM' : 'LOW',
+    chronosStatus: chronos.modelStatus,
+    reason: chronos.modelStatus === 'READY'
+      ? `Fatigue Engine recommends ${baseMinutes} min; Chronos context ${chronos.suggestedAdditionalCrew > 0 ? 'adds recovery buffer for productivity risk' : 'keeps standard recovery'}.`
+      : `Fatigue Engine recommends ${baseMinutes} min. Chronos unavailable, so safety fallback is used.`
+  };
+}
+
+export async function grantWorkerRest(workerId: string, minutes?: number) {
+  const worker = getRequiredWorker(workerId);
+  const recommendation = await getWorkerRestRecommendation(workerId);
+  const plannedMinutes = Math.max(5, Math.min(60, Math.round(minutes ?? recommendation.recommendedMinutes)));
+  const task = (await getTasks()).find((item) => item.owner === worker.name && !['Done', 'Review'].includes(item.status));
+  const device = getAssignedDevice(workerId);
+  const now = new Date();
+  const endsAt = new Date(now.getTime() + plannedMinutes * 60_000);
+  const breakSessionId = crypto.randomUUID();
+
+  db.prepare(`
+    INSERT INTO break_sessions (
+      id, worker_id, task_id, device_id, source, status, planned_minutes,
+      started_at, ends_at, risk_evaluation_id
+    ) VALUES (?, ?, ?, ?, ?, 'BREAK_ACTIVE', ?, ?, ?, NULL)
+  `).run(
+    breakSessionId,
+    workerId,
+    task?.id ?? null,
+    device?.id ?? `worker-app-${workerId}`,
+    'MANAGER_ASSIGNED_REST',
+    plannedMinutes,
+    now.toISOString(),
+    endsAt.toISOString()
+  );
+
+  db.prepare('UPDATE workers SET status = ? WHERE id = ?').run('break', workerId);
+
+  if (task) {
+    db.prepare("UPDATE tasks SET status = ?, due = ? WHERE id = ?").run('Paused for rest', `${plannedMinutes}m rest`, task.id);
+  }
+
+  createManagerNotification({
+    title: 'Rest assigned',
+    detail: `Manager assigned ${plannedMinutes} minutes of rest. Return around ${formatTime(endsAt)}.`,
+    tone: 'warning',
+    targetLabel: 'View rest',
+    targetSection: 'workers',
+    targetWorkerId: worker.id
+  });
+
+  return {
+    ...await getWorkerAppData(workerId),
+    recommendation: {
+      ...recommendation,
+      recommendedMinutes: plannedMinutes
+    },
+    breakSessionId
+  };
+}
+
 export async function triggerWorkerSos(workerId: string) {
   const worker = getRequiredWorker(workerId);
   const device = getAssignedDevice(workerId);
@@ -223,6 +317,32 @@ function getAssignedDevice(workerId: string) {
     .get(workerId);
 }
 
+function getRecentRestMinutes(workerId: string) {
+  const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
+  return db.query<{ minutes: number | null }, [string, string]>(`
+    SELECT COALESCE(SUM(planned_minutes), 0) as minutes
+    FROM break_sessions
+    WHERE worker_id = ? AND started_at >= ?
+  `).get(workerId, eightHoursAgo)?.minutes ?? 0;
+}
+
+function parseWorkerTimeMinutes(value: string) {
+  const [hours, minutes] = value.split(':').map(Number);
+
+  if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+    return hours * 60 + minutes;
+  }
+
+  return 0;
+}
+
+function formatTime(value: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(value);
+}
+
 function makeEnvelope(
   device: NonNullable<ReturnType<typeof getAssignedDevice>>,
   eventType: string,
@@ -247,8 +367,8 @@ function makeEnvelope(
 function createManagerNotification(input: Omit<Notification, 'id' | 'read'>) {
   db.prepare(`
     INSERT INTO notifications (
-      id, title, detail, tone, target_label, target_section, target_worker_id, read
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+      id, title, detail, tone, target_label, target_section, target_worker_id, created_at, read
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
   `).run(
     `worker-action-${crypto.randomUUID()}`,
     input.title,
@@ -256,6 +376,7 @@ function createManagerNotification(input: Omit<Notification, 'id' | 'read'>) {
     input.tone satisfies Tone,
     input.targetLabel,
     input.targetSection satisfies ManagerSection,
-    input.targetWorkerId ?? null
+    input.targetWorkerId ?? null,
+    input.createdAt ?? new Date().toISOString()
   );
 }

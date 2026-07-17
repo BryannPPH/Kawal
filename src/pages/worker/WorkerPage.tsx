@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import kawalLogo from '../../assets/kawal-logo.svg';
 import { Button } from '../../components/ui/Button';
 import { Pill } from '../../components/ui/Pill';
+import { formatNotificationRelativeTime, sortNotificationsNewestFirst } from '../../lib/notificationTime';
 import type { AuthUser } from '../../types/navigation';
 import type { Notification, Task, Worker } from '../../types/workforce';
 import { ProcedureStep } from './components/ProcedureStep';
@@ -27,7 +28,7 @@ type WorkerPageProps = {
   onLogout: () => void;
 };
 
-type WorkerTab = 'home' | 'tasks' | 'report' | 'profile';
+type WorkerTab = 'home' | 'tasks' | 'report' | 'profile' | 'notifications';
 type SosStage = 'idle' | 'sending' | 'sent' | 'failed';
 
 type PpeCheckResult = {
@@ -91,6 +92,7 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
   const [ppeBusy, setPpeBusy] = useState(false);
   const [ppeError, setPpeError] = useState<string | null>(null);
   const [ppeCapturedImage, setPpeCapturedImage] = useState<string | null>(null);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [hazardType, setHazardType] = useState(hazardTypes[0]);
@@ -101,6 +103,7 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
   const riskScore = data.latestRisk?.risk_score ?? data.latestRisk?.riskScore ?? Math.max(worker?.fatigue ?? 0, data.activeIncident ? 92 : 28);
   const riskLevel = data.activeIncident ? 'CRITICAL' : data.latestRisk?.risk_level ?? data.latestRisk?.riskLevel ?? (riskScore >= 65 ? 'HIGH' : riskScore >= 40 ? 'MEDIUM' : 'LOW');
   const unreadCount = data.notifications.filter((notification) => !notification.read).length;
+  const visibleNavbarNotifications = sortNotificationsNewestFirst(data.notifications).slice(0, 3);
 
   const workerInitials = useMemo(() => {
     const name = worker?.name ?? user?.name ?? 'Worker';
@@ -328,6 +331,34 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
     }
   };
 
+  const openWorkerNotificationTarget = async (notification: Notification) => {
+    if (!workerId) {
+      return;
+    }
+
+    setAlertsOpen(false);
+    setActiveTab(getWorkerTabFromNotification(notification));
+
+    try {
+      const response = await fetch(`/api/workers/${workerId}/notifications/${notification.id}/read`, {
+        method: 'PATCH'
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      setData((await response.json()) as WorkerAppData);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to open notification');
+    }
+  };
+
+  const openWorkerNotificationList = () => {
+    setAlertsOpen(false);
+    setActiveTab('notifications');
+  };
+
   const navItems = [
     { tab: 'home' as const, label: 'Home', icon: Home },
     { tab: 'tasks' as const, label: 'Tasks', icon: ClipboardCheck },
@@ -342,7 +373,7 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
           <span className="h-2.5 w-2.5 rounded-full bg-[#2B2B2B]" />
         </div>
 
-        <header className="z-20 flex items-center justify-between gap-3 bg-[#FFFDFB] px-5 pb-4 pt-14">
+        <header className="relative z-20 flex items-center justify-between gap-3 bg-[#FFFDFB] px-5 pb-4 pt-14">
           <div className="flex min-w-0 items-center gap-3">
             <img src={kawalLogo} alt="Kawal logo" className="h-10 w-10 shrink-0 object-contain" />
             <div className="min-w-0">
@@ -350,15 +381,60 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
               <p className="truncate text-xs text-[#776B63]">{worker ? `${worker.zone} / ${worker.role}` : 'Loading profile'}</p>
             </div>
           </div>
-          <button
-            type="button"
-            aria-label="Logout"
-            title="Logout"
-            onClick={onLogout}
-            className="grid h-10 w-10 place-items-center rounded-xl border border-[#F3D7C8] bg-white text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
-          >
-            <LogOut size={17} />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Open notifications"
+              title="Notifications"
+              onClick={() => setAlertsOpen((open) => !open)}
+              className="relative grid h-10 w-10 place-items-center rounded-xl border border-[#F3D7C8] bg-white text-[#776B63] transition hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
+            >
+              <Bell size={17} />
+              {unreadCount > 0 ? <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#FD7124]" /> : null}
+            </button>
+
+            {alertsOpen ? (
+              <div className="absolute right-0 top-12 z-40 w-[320px] rounded-2xl border border-[#F3D7C8] bg-white p-3 shadow-[0_18px_50px_rgba(76,48,35,0.16)]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[#2F2C2A]">Manager Updates</p>
+                  <span className="rounded bg-[#FFEFE6] px-2 py-1 text-xs font-semibold text-[#C95119]">{unreadCount} unread</span>
+                </div>
+                <div className="space-y-2">
+                  {visibleNavbarNotifications.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => openWorkerNotificationTarget(item)}
+                      className={`group w-full rounded-xl border border-[#F3D7C8] p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6] ${
+                        item.read ? 'bg-white opacity-75' : 'bg-[#FFF8F4]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-sm font-semibold text-[#2F2C2A]">{item.title}</p>
+                        <span className={`h-2.5 w-2.5 rounded-full ${item.read ? 'bg-[#D9C5B9]' : item.tone === 'danger' ? 'bg-[#FD7124]' : item.tone === 'warning' ? 'bg-[#FAA745]' : 'bg-[#C95119]'}`} />
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[#776B63]">{item.detail}</p>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate text-xs font-semibold text-[#C95119]">{item.targetLabel}</span>
+                        <span className="shrink-0 text-[11px] font-semibold text-[#A09188]">{formatNotificationRelativeTime(item.createdAt)}</span>
+                      </div>
+                    </button>
+                  ))}
+                  {data.notifications.length ? (
+                    <button
+                      type="button"
+                      onClick={openWorkerNotificationList}
+                      className="mt-2 flex h-10 w-full items-center justify-center rounded-xl border border-[#F3D7C8] bg-white text-sm font-semibold text-[#C95119] transition hover:border-[#FD7124] hover:bg-[#FFEFE6]"
+                    >
+                      More notifications
+                    </button>
+                  ) : (
+                    <p className="rounded-xl bg-[#FFF8F4] px-3 py-4 text-sm font-semibold text-[#776B63]">No notifications yet.</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </header>
 
         <div className="bg-[#FFFDFB] px-5">
@@ -401,10 +477,17 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
               worker={worker}
               initials={workerInitials}
               unreadCount={unreadCount}
-              notifications={data.notifications}
               currentBreak={data.currentBreak}
               latestRisk={data.latestRisk}
               activeIncident={data.activeIncident}
+              onLogout={onLogout}
+            />
+          ) : null}
+          {worker && activeTab === 'notifications' ? (
+            <WorkerNotificationsPanel
+              notifications={data.notifications}
+              unreadCount={unreadCount}
+              onOpenNotification={openWorkerNotificationTarget}
             />
           ) : null}
         </main>
@@ -645,28 +728,38 @@ function ProfilePanel({
   worker,
   initials,
   unreadCount,
-  notifications,
   currentBreak,
   latestRisk,
-  activeIncident
+  activeIncident,
+  onLogout
 }: {
   worker: Worker;
   initials: string;
   unreadCount: number;
-  notifications: Notification[];
   currentBreak: WorkerAppData['currentBreak'];
   latestRisk: WorkerAppData['latestRisk'];
   activeIncident: WorkerAppData['activeIncident'];
+  onLogout: () => void;
 }) {
   return (
     <section className="min-h-full space-y-4">
-      <div className="flex items-center gap-3 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#FD7124] text-sm font-bold text-white">{initials}</span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[#2F2C2A]">{worker.name}</p>
-          <p className="mt-1 truncate text-sm text-[#776B63]">{worker.role} / {worker.zone}</p>
+      <div className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+        <div className="flex items-center gap-3">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#FD7124] text-sm font-bold text-white">{initials}</span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-[#2F2C2A]">{worker.name}</p>
+            <p className="mt-1 truncate text-sm text-[#776B63]">{worker.role} / {worker.zone}</p>
+          </div>
         </div>
-      </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#F3D7C8] bg-white text-sm font-semibold text-[#776B63] transition hover:border-[#FD7124] hover:bg-[#FFEFE6] hover:text-[#2F2C2A]"
+        >
+          <LogOut size={16} />
+          Logout
+        </button>
+        </div>
       <div className="grid grid-cols-2 gap-2">
         <InfoBox label="Status" value={worker.status} />
         <InfoBox label="Fatigue" value={`${worker.fatigue}%`} />
@@ -684,26 +777,73 @@ function ProfilePanel({
           <p>Incident: {activeIncident ? activeIncident.state : 'No active SOS'}</p>
         </div>
       </div>
-      <div className="rounded-2xl border border-[#F3D7C8] p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Bell size={16} className="text-[#FD7124]" />
-          <p className="text-sm font-semibold text-[#2F2C2A]">Manager Updates</p>
+    </section>
+  );
+}
+
+function WorkerNotificationsPanel({
+  notifications,
+  unreadCount,
+  onOpenNotification
+}: {
+  notifications: Notification[];
+  unreadCount: number;
+  onOpenNotification: (notification: Notification) => void;
+}) {
+  const sortedNotifications = sortNotificationsNewestFirst(notifications);
+
+  return (
+    <section className="min-h-full space-y-4">
+      <div className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[#2F2C2A]">Manager Updates</p>
+            <p className="mt-1 text-xs leading-5 text-[#776B63]">Newest updates from assignment, rest, safety, and SOS workflow.</p>
+          </div>
+          <Pill className="shrink-0 bg-[#FFEFE6] text-[#C95119]">{unreadCount} unread</Pill>
         </div>
-        <div className="space-y-2">
-          {notifications.length ? (
-            notifications.slice(0, 4).map((notification) => (
-              <div key={notification.id} className="rounded-xl bg-[#FFF8F4] px-3 py-2">
-                <p className="text-sm font-semibold text-[#2F2C2A]">{notification.title}</p>
-                <p className="mt-1 text-xs leading-5 text-[#776B63]">{notification.detail}</p>
+      </div>
+
+      <div className="space-y-2">
+        {sortedNotifications.length ? (
+          sortedNotifications.map((notification) => (
+            <button
+              key={notification.id}
+              type="button"
+              onClick={() => onOpenNotification(notification)}
+              className={`w-full rounded-2xl border p-3 text-left transition hover:border-[#FD7124] hover:bg-[#FFEFE6] ${
+                notification.read ? 'border-[#F3D7C8] bg-white' : 'border-[#F3D7C8] bg-[#FFF8F4]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-semibold text-[#2F2C2A]">{notification.title}</p>
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${notification.read ? 'bg-[#D9C5B9]' : notification.tone === 'danger' ? 'bg-[#FD7124]' : notification.tone === 'warning' ? 'bg-[#FAA745]' : 'bg-[#C95119]'}`} />
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-[#776B63]">No updates yet.</p>
-          )}
-        </div>
+              <p className="mt-1 text-xs leading-5 text-[#776B63]">{notification.detail}</p>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate text-xs font-semibold text-[#C95119]">{notification.targetLabel}</span>
+                <span className="shrink-0 text-[11px] font-semibold text-[#A09188]">{formatNotificationRelativeTime(notification.createdAt)}</span>
+              </div>
+            </button>
+          ))
+        ) : (
+          <p className="rounded-2xl bg-[#FFF8F4] px-4 py-6 text-sm font-semibold text-[#776B63]">No notifications yet.</p>
+        )}
       </div>
     </section>
   );
+}
+
+function getWorkerTabFromNotification(notification: Notification): WorkerTab {
+  if (notification.targetSection === 'tasks') {
+    return 'tasks';
+  }
+
+  if (notification.targetSection === 'workers') {
+    return 'profile';
+  }
+
+  return 'home';
 }
 
 function WorkerNavButton({

@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react';
 import { notifications as fallbackNotifications, tasks as fallbackTasks, workers as fallbackWorkers } from '../constants/workforce';
 import type { Notification, Task, WorkforceData } from '../types/workforce';
 
+export type WorkerRestRecommendation = {
+  workerId: string;
+  recommendedMinutes: number;
+  fatigueScore: number;
+  fatigueLevel: string;
+  chronosStatus: 'READY' | 'UNAVAILABLE';
+  reason: string;
+};
+
 const fallbackData: WorkforceData = {
   workers: fallbackWorkers,
   tasks: fallbackTasks,
@@ -123,12 +132,54 @@ export function useWorkforceData() {
       throw new Error('error' in payload ? payload.error ?? 'Unable to assign task' : 'Unable to assign task');
     }
 
-    setData((current) => ({
-      ...current,
-      tasks: current.tasks.map((task) => task.id === payload.id ? payload : task)
-    }));
+    try {
+      const workforceResponse = await fetch('/api/workforce');
+
+      if (!workforceResponse.ok) {
+        throw new Error(`API returned ${workforceResponse.status}`);
+      }
+
+      setData((await workforceResponse.json()) as WorkforceData);
+    } catch {
+      setData((current) => ({
+        ...current,
+        tasks: current.tasks.map((task) => task.id === payload.id ? payload : task)
+      }));
+    }
 
     return payload;
+  };
+
+  const getWorkerRestRecommendation = async (workerId: string) => {
+    const response = await fetch(`/api/workers/${workerId}/rest-recommendation`);
+    const payload = (await response.json()) as WorkerRestRecommendation | { error?: string };
+
+    if (!response.ok || isRestRecommendationError(payload)) {
+      throw new Error('error' in payload ? payload.error ?? 'Unable to recommend rest' : 'Unable to recommend rest');
+    }
+
+    return payload;
+  };
+
+  const grantWorkerRest = async (workerId: string, minutes?: number) => {
+    const response = await fetch(`/api/workers/${workerId}/rest-grant`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ minutes })
+    });
+    const payload = (await response.json()) as { error?: string };
+
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error ?? 'Unable to grant rest');
+    }
+
+    const workforceResponse = await fetch('/api/workforce');
+
+    if (workforceResponse.ok) {
+      setData((await workforceResponse.json()) as WorkforceData);
+    }
   };
 
   return {
@@ -137,10 +188,16 @@ export function useWorkforceData() {
     error,
     markNotificationRead,
     createTask,
-    autoAssignTask
+    autoAssignTask,
+    getWorkerRestRecommendation,
+    grantWorkerRest
   };
 }
 
 function isTaskError(payload: Task | { error?: string }): payload is { error?: string } {
+  return 'error' in payload;
+}
+
+function isRestRecommendationError(payload: WorkerRestRecommendation | { error?: string }): payload is { error?: string } {
   return 'error' in payload;
 }

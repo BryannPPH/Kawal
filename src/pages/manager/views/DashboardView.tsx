@@ -1,4 +1,5 @@
 import { Activity, Check, ClipboardList, ShieldAlert, TimerReset, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Task, Worker } from '../../../types/workforce';
 import { AssignmentPanel } from '../components/AssignmentPanel';
 import { MetricCard } from '../components/MetricCard';
@@ -9,9 +10,12 @@ type DashboardViewProps = {
   workers: Worker[];
   tasks: Task[];
   onSelectWorker: (worker: Worker) => void;
+  onAutoAssign: (taskId: string) => Promise<Task>;
 };
 
-export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }: DashboardViewProps) {
+export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, onAutoAssign }: DashboardViewProps) {
+  const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const workingCount = workers.filter((worker) => worker.status === 'working').length;
   const breakCount = workers.filter((worker) => worker.status === 'break').length;
   const waitingCount = workers.filter((worker) => worker.status === 'waiting').length;
@@ -24,22 +28,36 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
     { label: 'Open tasks', value: String(openTaskCount), detail: `${reviewCount} ready for review`, icon: ClipboardList },
     { label: 'Avg fatigue', value: `${averageFatigue}%`, detail: `${breakCount} currently on break`, icon: ShieldAlert }
   ];
+  const recommendedTask = useMemo(() => {
+    const unassignedTasks = tasks.filter((task) => task.owner === 'Unassigned');
+    return unassignedTasks.find((task) => task.schedulerRecommendation.selectedWorkerRecommendations.length > 0) ?? unassignedTasks[0] ?? null;
+  }, [tasks]);
+  const recommendedWorkerId = recommendedTask?.schedulerRecommendation.selectedWorkerRecommendations[0]?.workerId;
+  const recommendedWorker = workers.find((worker) => worker.id === recommendedWorkerId) ?? selectedWorker;
+
+  const approveRecommendedAssignment = async () => {
+    if (!recommendedTask) {
+      return;
+    }
+
+    setAssigningTaskId(recommendedTask.id);
+    setAssignmentError(null);
+
+    try {
+      await onAutoAssign(recommendedTask.id);
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Unable to assign task');
+    } finally {
+      setAssigningTaskId(null);
+    }
+  };
 
   return (
     <div className="space-y-8">
       <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
         <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="p-6 sm:p-7">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-[#C95119]">Live shift snapshot</p>
-                <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-normal text-[#2F2C2A]">Keep the site moving without overloading the crew.</h2>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-[#776B63]">A simplified view of task flow, fatigue pressure, and worker availability for the current shift.</p>
-              </div>
-              <span className="hidden rounded-xl bg-[#FFEFE6] px-3 py-1 text-xs font-semibold text-[#C95119] sm:inline-flex">Live</span>
-            </div>
-
-            <div className="mt-7 grid gap-4 sm:grid-cols-3">
+          <div className="flex items-center p-6 sm:p-7">
+            <div className="grid w-full gap-4 sm:grid-cols-3">
               {visualMetrics.map((item) => (
                 <MetricCard key={item.label} {...item} />
               ))}
@@ -68,7 +86,6 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">Today&apos;s Focus</p>
-            <p className="mt-1 text-sm text-[#776B63]">Three calm signals for managers before they open the detailed pages.</p>
           </div>
           <Check size={18} className="text-[#55936A]" />
         </div>
@@ -80,7 +97,14 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <AssignmentPanel selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
+        <AssignmentPanel
+          selectedWorker={recommendedWorker}
+          task={recommendedTask}
+          assigning={Boolean(recommendedTask && assigningTaskId === recommendedTask.id)}
+          error={assignmentError}
+          onSelectWorker={onSelectWorker}
+          onApprove={approveRecommendedAssignment}
+        />
         <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={onSelectWorker} />
       </section>
     </div>

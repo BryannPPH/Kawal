@@ -106,7 +106,7 @@ export function IncidentCenterView() {
             data.incidentHistory.map((incident) => (
               <div key={incident.id} className="grid gap-3 rounded-2xl border border-[#F3D7C8] p-4 md:grid-cols-[minmax(0,1fr)_150px_130px] md:items-center">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#2F2C2A]">{incident.trigger_source}</p>
+                  <p className="truncate text-sm font-semibold text-[#2F2C2A]">{formatTriggerSource(incident.trigger_source)}</p>
                   <p className="mt-1 text-sm text-[#776B63]">{incident.worker_id} / {incident.zone_id ?? 'Unknown zone'}</p>
                 </div>
                 <Pill className={incident.state === 'OPEN' ? 'bg-[#FFEFE6] text-[#B84011]' : 'bg-[#FFF7ED] text-[#9A5719]'}>{incident.state}</Pill>
@@ -152,7 +152,7 @@ function IncidentCard({
             <Pill className="bg-[#FFF4DC] text-[#8A4B02]">Escalation {incident.escalation_level}</Pill>
           </div>
           <p className="mt-3 text-sm font-semibold text-[#2F2C2A]">{incident.worker_id} / {incident.zone_id ?? 'Unknown zone'}</p>
-          <p className="mt-1 text-sm text-[#776B63]">{incident.trigger_source} opened {formatTime(incident.opened_at)}</p>
+          <p className="mt-1 text-sm text-[#776B63]">{formatTriggerSource(incident.trigger_source)} opened {formatTime(incident.opened_at)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => onAction(incident.id, 'acknowledge')}>Acknowledge</Button>
@@ -173,4 +173,8 @@ function formatTime(value: string) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(new Date(value));
+}
+
+function formatTriggerSource(value: string) {
+  return value.includes('SOS') ? 'SOS' : value;
 }

@@ -24,20 +24,19 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker }: WorkerB
           <p className="text-sm font-semibold text-[#2F2C2A]">Worker Dispatch</p>
           <p className="mt-1 text-sm text-[#776B63]">A lighter board for availability, fatigue, and current assignment.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(['all', 'working', 'waiting', 'break', 'done'] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setFilter(item)}
-              className={`h-9 rounded-xl px-3 text-sm font-semibold transition ${
-                filter === item ? 'bg-[#FD7124] text-white' : 'border border-[#F3D7C8] bg-white text-[#5F5A56] hover:bg-[#FFEFE6]'
-              }`}
-            >
-              {item === 'all' ? 'All' : statusLabels[item]}
-            </button>
-          ))}
-        </div>
+        <label className="w-full lg:w-48">
+          <span className="sr-only">Filter worker status</span>
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as WorkerStatus | 'all')}
+            className="field-input bg-white font-semibold"
+          >
+            <option value="all">All workers</option>
+            {(['working', 'waiting', 'break', 'done'] as const).map((status) => (
+              <option key={status} value={status}>{statusLabels[status]}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-4">

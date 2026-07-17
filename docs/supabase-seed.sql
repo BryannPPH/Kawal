@@ -77,10 +77,10 @@ on conflict (id) do update set
   due = excluded.due,
   tone = excluded.tone;
 
-insert into notifications (id, title, detail, tone, target_label, target_section, target_worker_id, read) values
-  ('hazard-zone-c', 'Hazard report', 'Wet surface reported near Zone C.', 'danger', 'Open Tasks', 'tasks', null, false),
-  ('fatigue-sari', 'Fatigue watch', 'Sari reached the break threshold.', 'warning', 'View Worker', 'workers', 'sari', false),
-  ('review-dimas', 'Review ready', 'Dimas uploaded scaffold inspection proof.', 'success', 'Review Tasks', 'tasks', null, false)
+insert into notifications (id, title, detail, tone, target_label, target_section, target_worker_id, read, created_at) values
+  ('hazard-zone-c', 'Hazard report', 'Wet surface reported near Zone C.', 'danger', 'Open Tasks', 'tasks', null, false, now() - interval '4 minutes'),
+  ('fatigue-sari', 'Fatigue watch', 'Sari reached the break threshold.', 'warning', 'View Worker', 'workers', 'sari', false, now() - interval '18 minutes'),
+  ('review-dimas', 'Review ready', 'Dimas uploaded scaffold inspection proof.', 'success', 'Review Tasks', 'tasks', null, false, now() - interval '1 hour')
 on conflict (id) do update set
   title = excluded.title,
   detail = excluded.detail,
@@ -88,7 +88,8 @@ on conflict (id) do update set
   target_label = excluded.target_label,
   target_section = excluded.target_section,
   target_worker_id = excluded.target_worker_id,
-  read = excluded.read;
+  read = excluded.read,
+  created_at = excluded.created_at;
 
 insert into iot_devices (
   id, mqtt_client_id, name, device_type, status, firmware_version,

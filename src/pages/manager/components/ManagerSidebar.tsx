@@ -9,8 +9,6 @@ type ManagerSidebarProps = {
 };
 
 export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSidebarProps) {
-  const activeLabel = managerSections.find((item) => item.section === activeSection)?.label ?? 'Dashboard';
-
   return (
     <aside className="fixed bottom-0 left-0 top-0 z-30 hidden w-[248px] border-r border-[#F3D7C8]/70 bg-white/90 px-5 py-6 backdrop-blur-xl lg:flex lg:flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -44,14 +42,6 @@ export function ManagerSidebar({ activeSection, onSelectSection }: ManagerSideba
           })}
         </nav>
 
-        <div className="mt-8 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-          <p className="text-sm font-semibold text-[#2F2C2A]">Current Page</p>
-          <p className="mt-1 text-sm text-[#776B63]">{activeLabel}</p>
-          <div className="mt-4 flex items-center gap-2">
-            <TimerReset size={16} className="text-[#FAA745]" />
-            <p className="text-sm text-[#776B63]">11 workers scheduled for break.</p>
-          </div>
-        </div>
       </div>
 
       <div className="mt-5 border-t border-[#F3D7C8] pt-4">

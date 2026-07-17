@@ -51,6 +51,8 @@ import {
   listSupabaseDevices,
   markSupabaseNotificationRead,
   completeSupabaseWorkerAssignment,
+  getSupabaseWorkerRestRecommendation,
+  grantSupabaseWorkerRest,
   reportSupabaseWorkerHazard,
   requestSupabaseWorkerRest,
   shouldUseSupabase,
@@ -60,7 +62,9 @@ import {
 } from './supabase';
 import {
   completeWorkerAssignment,
+  getWorkerRestRecommendation,
   getWorkerAppData,
+  grantWorkerRest,
   performWorkerPpeCheck,
   readWorkerNotification,
   reportWorkerHazard,
@@ -170,6 +174,23 @@ const server = Bun.serve({
         : await updateWorkerShiftStatus(workerStatusMatch[1], body.status));
     }
 
+    const workerRestRecommendationMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/rest-recommendation$/);
+
+    if (request.method === 'GET' && workerRestRecommendationMatch) {
+      return jsonResponse(useSupabase
+        ? await getSupabaseWorkerRestRecommendation(workerRestRecommendationMatch[1])
+        : await getWorkerRestRecommendation(workerRestRecommendationMatch[1]));
+    }
+
+    const workerRestGrantMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/rest-grant$/);
+
+    if (request.method === 'POST' && workerRestGrantMatch) {
+      const body = await readJsonBody<{ minutes?: number }>(request);
+      return jsonResponse(useSupabase
+        ? await grantSupabaseWorkerRest(workerRestGrantMatch[1], body.minutes)
+        : await grantWorkerRest(workerRestGrantMatch[1], body.minutes), { status: 201 });
+    }
+
     const workerPpeCheckMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/ppe-check$/);
 
     if (request.method === 'POST' && workerPpeCheckMatch) {
@@ -227,9 +248,12 @@ const server = Bun.serve({
     const workerNotificationReadMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/notifications\/([^/]+)\/read$/);
 
     if (request.method === 'PATCH' && workerNotificationReadMatch) {
-      return jsonResponse(useSupabase
-        ? await markSupabaseNotificationRead(workerNotificationReadMatch[2])
-        : await readWorkerNotification(workerNotificationReadMatch[1], workerNotificationReadMatch[2]));
+      if (useSupabase) {
+        await markSupabaseNotificationRead(workerNotificationReadMatch[2]);
+        return jsonResponse(await getSupabaseWorkerAppData(workerNotificationReadMatch[1]));
+      }
+
+      return jsonResponse(await readWorkerNotification(workerNotificationReadMatch[1], workerNotificationReadMatch[2]));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/tasks') {
