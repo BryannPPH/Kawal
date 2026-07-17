@@ -16,11 +16,15 @@ create table if not exists workers (
   status text not null check (status in ('waiting', 'working', 'break', 'done', 'emergency')),
   zone text not null,
   time text not null,
+  yesterday_worked_minutes integer not null default 0,
   workload text not null,
   fatigue integer not null default 0,
   pay text not null,
   "match" integer not null default 0
 );
+
+alter table public.workers
+  add column if not exists yesterday_worked_minutes integer not null default 0;
 
 create table if not exists tasks (
   id text primary key,

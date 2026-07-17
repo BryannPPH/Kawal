@@ -1,7 +1,8 @@
-import { CloudSun, Droplets, Gauge, Thermometer } from 'lucide-react';
+import { CloudSun } from 'lucide-react';
 import { Pill } from '../../../components/ui/Pill';
 import { statusLabels, statusStyles } from '../../../constants/workforce';
 import type { Worker, WorkerEnvironment } from '../../../types/workforce';
+import { WorkHoursScale } from './WorkHoursScale';
 
 type WorkerRowProps = {
   worker: Worker;
@@ -80,7 +81,7 @@ export function WorkerRow({ worker, selected, onSelect, onOpenDetails, compact =
           onSelect(worker);
         }
       }}
-      className={`grid w-full cursor-pointer grid-cols-1 items-center gap-4 rounded-2xl border bg-white p-5 text-left transition hover:border-[#FAA745] hover:bg-[#FFF8F4] lg:grid-cols-[minmax(190px,1.2fr)_150px_minmax(210px,1fr)_minmax(130px,0.72fr)_98px] ${
+      className={`grid w-full cursor-pointer grid-cols-1 items-center gap-4 rounded-2xl border bg-white p-5 text-left transition hover:border-[#FAA745] hover:bg-[#FFF8F4] lg:grid-cols-3 xl:grid-cols-[minmax(220px,1.2fr)_130px_180px_minmax(130px,0.72fr)_90px] ${
         selected ? 'border-[#FD7124] ring-2 ring-[#FFEFE6]' : 'border-[#F3D7C8]'
       }`}
     >
@@ -95,26 +96,17 @@ export function WorkerRow({ worker, selected, onSelect, onOpenDetails, compact =
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold text-[#2F2C2A]">{worker.name}</span>
           <span className="mt-1 block truncate text-sm text-[#776B63]">{worker.role} / {worker.task}</span>
-          <span className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[#FFF8F4] px-2 py-1 text-[11px] font-semibold text-[#776B63]">
-            <CloudSun size={12} className={environment.source === 'live' ? 'text-[#247A4D]' : 'text-[#A09188]'} />
-            {environment.source === 'live' ? 'Live environment' : 'Stub environment'}
-          </span>
         </span>
       </span>
 
-      <span className="relative flex items-center justify-center">
-        <span className={`absolute left-0 top-1/2 inline-flex min-w-16 -translate-x-[115%] -translate-y-1/2 items-center justify-center rounded-lg px-2 py-1 text-center text-[11px] font-semibold ${getEnvironmentBadgeStyle(environment.riskLevel)}`}>{environment.riskLevel}</span>
+      <span className="flex items-center justify-center">
         <span className="flex min-w-0 flex-col items-center self-center text-center">
         <span className="block text-xs font-medium text-[#A09188]">Status</span>
         <Pill className={statusStyles[worker.status]}>{statusLabels[worker.status]}</Pill>
         </span>
       </span>
 
-      <span className="grid grid-cols-3 items-center gap-3 self-center">
-          <EnvironmentMini icon={Thermometer} label="Temp" value={formatCompactValue(environment.temperatureC, 'C')} />
-          <EnvironmentMini icon={Droplets} label="Humid" value={formatCompactValue(environment.humidityPct, '%')} />
-          <EnvironmentMini icon={Gauge} label="Press" value={formatCompactValue(environment.pressureHpa, 'hPa')} />
-      </span>
+      <WorkHoursScale minutes={worker.yesterdayWorkedMinutes} compact />
 
       <span>
         <span className="flex justify-between text-xs font-medium text-[#A09188]">
@@ -148,16 +140,6 @@ export function WorkerRow({ worker, selected, onSelect, onOpenDetails, compact =
         </button>
       </span>
     </div>
-  );
-}
-
-function EnvironmentMini({ icon: Icon, label, value }: { icon: typeof Thermometer; label: string; value: string }) {
-  return (
-    <span className="flex min-w-0 flex-col items-center text-center">
-      <Icon size={17} className="text-[#FD7124]" />
-      <span className="mt-1 block max-w-full truncate text-sm font-semibold text-[#2F2C2A]">{value}</span>
-      <span className="mt-0.5 block truncate text-[10px] font-semibold uppercase text-[#A09188]">{label}</span>
-    </span>
   );
 }
 

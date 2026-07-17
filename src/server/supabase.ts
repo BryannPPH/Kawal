@@ -9,6 +9,7 @@ import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
 import type { Envelope } from './iot';
 import { getLatestPpeCheck, runPpeCheck } from './ppe';
 import { recommendWorkers } from './workerAssignmentEngine';
+import { calculatePreviousDayWorkedMinutes } from './workHours';
 
 const configuredSupabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
 const supabaseUrl = configuredSupabaseUrl.replace(/\/rest\/v1\/?$/, '');
@@ -1219,6 +1220,13 @@ async function getSupabaseIoTSnapshot(): Promise<SupabaseIoTSnapshot> {
 }
 
 async function loadSupabaseIoTSnapshot() {
+  for (const [taskId, task] of loadRuntimeStateMap<Task>('task')) {
+    iotRuntimeTasks.set(taskId, {
+      ...task,
+      intensity: normalizeTaskIntensity(task.intensity)
+    });
+  }
+
   const [environmentRows, workHourRows, warningRows, inactivityRows, restBreakRows] = await Promise.all([
     safeSelectRows<IoTEnvironmentConditionRow>('environment_condition', 'select=*&order=created_at.desc&limit=30'),
     safeSelectRows<IoTWorkHoursRow>('work_hours', 'select=*&order=start_time.desc&limit=50'),
@@ -1231,7 +1239,14 @@ async function loadSupabaseIoTSnapshot() {
   const latestClearWarning = warningRows.find((row) => isWorkerClearedWarning(row)) ?? null;
   const latestWarning = warningRows.find((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning)) ?? null;
   const activeRestBreak = restBreakRows.find((row) => normalizeRestBreakStatus(row.status) === 'APPROVED') ?? null;
-  const primaryWorker = makeIoTWorker(latestWorkHour, latestWarning, activeRestBreak, inactivityRows[0] ?? null, latestEnvironment);
+  const primaryWorker = makeIoTWorker(
+    latestWorkHour,
+    latestWarning,
+    activeRestBreak,
+    inactivityRows[0] ?? null,
+    latestEnvironment,
+    calculatePreviousDayWorkedMinutes(workHourRows)
+  );
   const workers = [
     primaryWorker,
     ...fallbackWorkers.slice(1).map((worker) => ({
@@ -1394,7 +1409,8 @@ function makeIoTWorker(
   latestWarning: IoTWarningRow | null,
   activeRestBreak: IoTRestBreakRow | null,
   latestInactivity: IoTInactivityLogRow | null,
-  latestEnvironment: IoTEnvironmentConditionRow | null
+  latestEnvironment: IoTEnvironmentConditionRow | null,
+  yesterdayWorkedMinutes: number
 ): Worker {
   const base = fallbackWorkers[0];
   const event = normalizeWarningEvent(latestWarning?.event_type);
@@ -1417,6 +1433,7 @@ function makeIoTWorker(
     status,
     zone: 'IoT Site',
     time: formatDurationClock(durationSeconds),
+    yesterdayWorkedMinutes,
     workload: fatigue >= 70 ? 'High' : fatigue >= 45 ? 'Medium' : 'Low',
     fatigue,
     match: Math.max(58, 100 - fatigue),
@@ -2137,6 +2154,7 @@ function mapWorker(row: SupabaseWorkerRow): Worker {
   return {
     ...row,
     status: row.status as WorkerStatus,
+    yesterdayWorkedMinutes: Math.max(0, Number(row.yesterday_worked_minutes) || 0),
     match: row.match
   };
 }
@@ -2418,8 +2436,9 @@ type SupabaseUserRow = {
   role: string;
 };
 
-type SupabaseWorkerRow = Omit<Worker, 'status'> & {
+type SupabaseWorkerRow = Omit<Worker, 'status' | 'yesterdayWorkedMinutes'> & {
   status: string;
+  yesterday_worked_minutes?: number | null;
 };
 
 type SupabaseTaskRow = {

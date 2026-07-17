@@ -9,6 +9,7 @@ export const workers: Worker[] = [
     status: 'working',
     zone: 'Zone C',
     time: '02:14',
+    yesterdayWorkedMinutes: 485,
     workload: 'Balanced',
     fatigue: 24,
     pay: 'Rp180.000',
@@ -22,6 +23,7 @@ export const workers: Worker[] = [
     status: 'working',
     zone: 'Zone B',
     time: '01:42',
+    yesterdayWorkedMinutes: 535,
     workload: 'Medium',
     fatigue: 36,
     pay: 'Rp150.000',
@@ -35,6 +37,7 @@ export const workers: Worker[] = [
     status: 'waiting',
     zone: 'Gate 2',
     time: '00:00',
+    yesterdayWorkedMinutes: 430,
     workload: 'Low',
     fatigue: 12,
     pay: 'Rp95.000',
@@ -48,6 +51,7 @@ export const workers: Worker[] = [
     status: 'waiting',
     zone: 'Zone B',
     time: '00:00',
+    yesterdayWorkedMinutes: 475,
     workload: 'Low',
     fatigue: 18,
     pay: 'Rp120.000',
@@ -61,6 +65,7 @@ export const workers: Worker[] = [
     status: 'break',
     zone: 'Rest Area',
     time: '00:12',
+    yesterdayWorkedMinutes: 565,
     workload: 'Medium',
     fatigue: 58,
     pay: 'Rp145.000',
@@ -74,6 +79,7 @@ export const workers: Worker[] = [
     status: 'done',
     zone: 'Zone A',
     time: '03:20',
+    yesterdayWorkedMinutes: 410,
     workload: 'High',
     fatigue: 44,
     pay: 'Rp210.000',
@@ -82,10 +88,20 @@ export const workers: Worker[] = [
 ];
 
 export const tasks: Task[] = [
-  makeSeedTask('steel-beam-install', 'Steel beam install', 'Core Tower', 'Zone C', 8, 'beams', '2h 15m', 'High', 'Budi Santoso', 'In progress', 'warning'),
-  makeSeedTask('harness-audit', 'Harness audit', 'Core Tower', 'Zone B', 18, 'workers', '45m', 'Medium', 'Dewi Lestari', 'Assigned', 'neutral'),
-  makeSeedTask('scaffold-photo-proof', 'Scaffold photo proof', 'Podium', 'Zone A', 1, 'report', 'Ready', 'Low', 'Dimas Ardi', 'Review', 'success'),
-  makeSeedTask('wet-surface-cleanup', 'Wet surface cleanup', 'Podium', 'Zone C', 120, 'm2', '30m', 'Critical', 'Unassigned', 'Open', 'danger')
+  makeSeedTask('steel-beam-install', 'Steel beam installation', 'Core Tower', 'Zone C', 8, 'beams', 4, 'High', 'High'),
+  makeSeedTask('harness-audit', 'Harness safety audit', 'Core Tower', 'Zone B', 18, 'workers', 6, 'Medium', 'Medium'),
+  makeSeedTask('scaffold-access-check', 'Scaffold access check', 'Podium', 'Zone A', 6, 'levels', 3, 'High', 'High'),
+  makeSeedTask('wet-surface-cleanup', 'Wet surface cleanup', 'Podium', 'Zone C', 120, 'm2', 2, 'Critical', 'High'),
+  makeSeedTask('concrete-formwork-inspection', 'Concrete formwork inspection', 'North Wing', 'Zone D', 14, 'sections', 8, 'Medium', 'High'),
+  makeSeedTask('electrical-cable-routing', 'Electrical cable routing', 'Core Tower', 'Zone E', 240, 'meters', 12, 'Medium', 'Medium'),
+  makeSeedTask('material-staging', 'Material staging', 'Loading Bay', 'Gate 2', 32, 'pallets', 5, 'Low', 'Medium'),
+  makeSeedTask('debris-cleanup', 'Construction debris cleanup', 'South Wing', 'Zone A', 180, 'm2', 10, 'Low', 'Low'),
+  makeSeedTask('crane-exclusion-zone', 'Crane exclusion zone setup', 'Core Tower', 'Zone B', 12, 'barriers', 4, 'High', 'Medium'),
+  makeSeedTask('fire-equipment-inspection', 'Fire equipment inspection', 'Podium', 'Zone D', 24, 'units', 16, 'Medium', 'Low'),
+  makeSeedTask('drainage-clearing', 'Temporary drainage clearing', 'Perimeter', 'Zone C', 75, 'meters', 7, 'High', 'High'),
+  makeSeedTask('ppe-inventory', 'PPE inventory count', 'Site Office', 'Warehouse', 160, 'items', 24, 'Low', 'Low'),
+  makeSeedTask('loading-bay-marking', 'Loading bay safety marking', 'Loading Bay', 'Gate 1', 90, 'meters', 14, 'Medium', 'Medium'),
+  makeSeedTask('rebar-bundle-prep', 'Rebar bundle preparation', 'North Wing', 'Zone E', 20, 'bundles', 9, 'High', 'High')
 ];
 
 function makeSeedTask(
@@ -95,16 +111,16 @@ function makeSeedTask(
   zone: string,
   quantity: number,
   unit: string,
-  deadline: string,
+  deadlineOffsetHours: number,
   priority: string,
-  owner: string,
-  status: string,
-  tone: Tone
+  intensity: Task['intensity']
 ): Task {
+  const deadline = new Date(Date.now() + deadlineOffsetHours * 60 * 60 * 1000).toISOString();
+
   return {
     id,
     title: template,
-    owner,
+    owner: 'Unassigned',
     location: zone,
     taskTemplate: template,
     project,
@@ -113,15 +129,15 @@ function makeSeedTask(
     unit,
     deadline,
     priority,
-    intensity: priority === 'Critical' || priority === 'High' ? 'High' : 'Medium',
+    intensity,
     temperatureC: null,
     humidityPct: null,
-    workload: priority === 'High' || priority === 'Critical' ? 'High' : 'Medium',
+    workload: intensity === 'High' || priority === 'Critical' ? 'High' : intensity,
     notes: '',
     schedulerRecommendation: makeSeedSchedulerRecommendation(priority),
-    status,
+    status: 'Open',
     due: deadline,
-    tone
+    tone: priority === 'Critical' ? 'danger' : priority === 'High' ? 'warning' : 'neutral'
   };
 }
 

@@ -238,7 +238,6 @@ function ProjectPaceForecastPanel({
   const completedCount = completedTasks.length;
   const remainingCount = Math.max(0, plannedCount - completedCount);
   const completionPct = plannedCount ? Math.round((completedCount / plannedCount) * 100) : 0;
-  const totalEstimatedHours = projectTasks.reduce((sum, task) => sum + getTaskEstimatedHours(task), 0);
   const remainingEstimatedHours = projectTasks
     .filter((task) => !isTaskComplete(task))
     .reduce((sum, task) => sum + getTaskEstimatedHours(task), 0);
@@ -249,7 +248,6 @@ function ProjectPaceForecastPanel({
   const paceStatus = getPaceStatus(plannedCount, completedCount, paceRatio);
   const paceClass = getPaceClass(paceStatus);
   const values = forecast?.forecastValues?.length ? forecast.forecastValues : [];
-  const modelReady = forecast?.modelStatus === 'READY';
   const chartSeries = buildProjectPaceSeries({
     plannedCount,
     completedCount,
@@ -267,8 +265,7 @@ function ProjectPaceForecastPanel({
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="p-5 sm:p-6">
+      <div className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="flex items-center gap-2 text-sm font-semibold text-[#C95119]">
@@ -322,29 +319,6 @@ function ProjectPaceForecastPanel({
               />
             </div>
           </div>
-        </div>
-
-        <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-5 sm:p-6 lg:border-l lg:border-t-0">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[#2F2C2A]">Pace Inputs</p>
-              <p className="mt-1 text-sm text-[#776B63]">Actual work vs plan.</p>
-            </div>
-            <TrendingUp size={19} className="text-[#FD7124]" />
-          </div>
-          <div className="mt-6 space-y-5">
-            <VisualBar label="Pace ratio" value={paceRatio ? Math.round(Math.min(1.25, paceRatio) * 80) : 0} accent={paceRatio >= 1 ? 'bg-[#55936A]' : paceRatio >= 0.85 ? 'bg-[#FAA745]' : 'bg-[#CF5A4F]'} />
-            <VisualBar label="Estimated hours used" value={totalEstimatedHours ? Math.round((observedWorkerHours / totalEstimatedHours) * 100) : 0} accent="bg-[#FD7124]" />
-            <VisualBar label="Forecast health" value={modelReady ? 88 : 38} accent={modelReady ? 'bg-[#55936A]' : 'bg-[#FAA745]'} />
-          </div>
-          <div className="mt-5 rounded-2xl bg-white p-4">
-            <p className="text-xs font-semibold uppercase text-[#A09188]">Chronos</p>
-            <p className="mt-2 text-sm font-semibold text-[#2F2C2A]">{forecast?.futureProductivity ?? 'No model output yet'}</p>
-            <p className="mt-2 text-xs leading-5 text-[#776B63]">
-              {forecast?.modelStatus ?? 'PENDING'} / {forecast?.confidence ?? 'COLD_START'} / {formatHours(remainingEstimatedHours)} remaining estimate
-            </p>
-          </div>
-        </div>
       </div>
     </section>
   );
@@ -658,14 +632,6 @@ function getPaceRecommendation(input: {
 
 function formatRate(value: number) {
   return value >= 1 ? value.toFixed(1) : value.toFixed(2);
-}
-
-function formatHours(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '0h';
-  }
-
-  return value >= 10 ? `${Math.round(value)}h` : `${value.toFixed(1)}h`;
 }
 
 function FocusCard({ icon: Icon, label, value, detail }: { icon: typeof Users; label: string; value: string; detail: string }) {

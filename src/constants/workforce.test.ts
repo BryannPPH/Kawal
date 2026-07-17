@@ -16,6 +16,11 @@ describe('workforce constants', () => {
     expect(tasks.every((task) => supportedTones.has(task.tone))).toBe(true);
   });
 
+  it('seeds a usable unassigned task queue', () => {
+    expect(tasks.length).toBeGreaterThanOrEqual(12);
+    expect(tasks.every((task) => task.owner === 'Unassigned' && task.status === 'Open')).toBe(true);
+  });
+
   it('has labels for every worker status in use', () => {
     const statuses = new Set(workers.map((worker) => worker.status));
 

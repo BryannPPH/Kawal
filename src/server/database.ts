@@ -85,6 +85,7 @@ function createTables() {
       status TEXT NOT NULL,
       zone TEXT NOT NULL,
       time TEXT NOT NULL,
+      yesterday_worked_minutes INTEGER NOT NULL DEFAULT 0,
       workload TEXT NOT NULL,
       fatigue INTEGER NOT NULL,
       pay TEXT NOT NULL,
@@ -354,6 +355,7 @@ function createTables() {
     );
   `);
 
+  addColumnIfMissing('workers', 'yesterday_worked_minutes', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('tasks', 'location', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'task_template', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'project', "TEXT NOT NULL DEFAULT ''");
@@ -414,9 +416,9 @@ function seedUsers() {
 function seedWorkers() {
   const insertWorker = db.prepare(`
     INSERT OR IGNORE INTO workers (
-      id, name, role, task, status, zone, time, workload, fatigue, pay, match
+      id, name, role, task, status, zone, time, yesterday_worked_minutes, workload, fatigue, pay, match
     ) VALUES (
-      $id, $name, $role, $task, $status, $zone, $time, $workload, $fatigue, $pay, $match
+      $id, $name, $role, $task, $status, $zone, $time, $yesterdayWorkedMinutes, $workload, $fatigue, $pay, $match
     )
   `);
 
@@ -430,6 +432,7 @@ function seedWorkers() {
         $status: worker.status,
         $zone: worker.zone,
         $time: worker.time,
+        $yesterdayWorkedMinutes: worker.yesterdayWorkedMinutes,
         $workload: worker.workload,
         $fatigue: worker.fatigue,
         $pay: worker.pay,
@@ -442,10 +445,6 @@ function seedWorkers() {
 }
 
 function seedTasks() {
-  if (process.env.SEED_DEMO_TASKS !== 'true') {
-    return;
-  }
-
   const insertTask = db.prepare(`
     INSERT OR IGNORE INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
@@ -457,6 +456,11 @@ function seedTasks() {
       $schedulerRecommendation, $status, $due, $tone
     )
   `);
+  const insertRuntimeTask = db.prepare(`
+    INSERT OR IGNORE INTO supabase_iot_runtime_state (category, state_key, payload, updated_at)
+    VALUES ('task', $id, $payload, $updatedAt)
+  `);
+  const seedIoTRuntime = process.env.DATA_SOURCE === 'supabase' && process.env.SUPABASE_DATA_MODEL === 'iot';
 
   const insertMany = db.transaction((seedTasks: Task[]) => {
     for (const task of seedTasks) {
@@ -482,6 +486,14 @@ function seedTasks() {
         $due: task.due,
         $tone: task.tone
       });
+
+      if (seedIoTRuntime) {
+        insertRuntimeTask.run({
+          $id: task.id,
+          $payload: JSON.stringify(task),
+          $updatedAt: new Date().toISOString()
+        });
+      }
     }
   });
 
@@ -540,7 +552,7 @@ function seedIoTDevices() {
     $assignedWorkerId: 'budi',
     $assignedSiteId: 'site-001',
     $assignedZoneId: 'Zone C',
-    $assignedTaskId: 'steel-beam-install',
+    $assignedTaskId: null,
     $lastSeenAt: now,
     $batteryPct: 82,
     $signalStrength: -61,
@@ -549,8 +561,9 @@ function seedIoTDevices() {
   });
 }
 
-type WorkerRow = Omit<Worker, 'status'> & {
+type WorkerRow = Omit<Worker, 'status' | 'yesterdayWorkedMinutes'> & {
   status: WorkerStatus;
+  yesterday_worked_minutes: number;
 };
 
 type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'intensity' | 'temperatureC' | 'humidityPct' | 'workload' | 'schedulerRecommendation'> & {
@@ -609,7 +622,10 @@ export function authenticateUser(email: string, password: string): AuthUser | nu
 }
 
 export function getWorkers(): Worker[] {
-  return db.query<WorkerRow, []>('SELECT * FROM workers ORDER BY rowid').all();
+  return db.query<WorkerRow, []>('SELECT * FROM workers ORDER BY rowid').all().map((row) => ({
+    ...row,
+    yesterdayWorkedMinutes: Math.max(0, Number(row.yesterday_worked_minutes) || 0)
+  }));
 }
 
 export async function getTasks(): Promise<Task[]> {

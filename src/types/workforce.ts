@@ -26,6 +26,7 @@ export type Worker = {
   status: WorkerStatus;
   zone: string;
   time: string;
+  yesterdayWorkedMinutes: number;
   workload: string;
   fatigue: number;
   pay: string;

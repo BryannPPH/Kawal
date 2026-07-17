@@ -4,6 +4,7 @@ import { Button } from '../../../components/ui/Button';
 import type { WorkerRestRecommendation } from '../../../hooks/useWorkforceData';
 import type { Worker, WorkerEnvironment } from '../../../types/workforce';
 import { WorkerBoard } from '../components/WorkerBoard';
+import { WorkHoursScale } from '../components/WorkHoursScale';
 
 type WorkersViewProps = {
   workers: Worker[];
@@ -193,11 +194,12 @@ function WorkerDetailView({
           </span>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <DetailMetric icon={BriefcaseBusiness} label="Task" value={worker.task} />
           <DetailMetric icon={Clock3} label="Work time" value={worker.time} />
           <DetailMetric icon={WalletCards} label="Pay" value={worker.pay} />
           <DetailMetric icon={MapPin} label="Match" value={`${worker.match}%`} />
+          <WorkHoursScale minutes={worker.yesterdayWorkedMinutes} />
         </div>
       </div>
 
