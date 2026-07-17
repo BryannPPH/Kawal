@@ -1,0 +1,38 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const candidates = [
+  join(process.cwd(), '.venv', 'bin', 'python'),
+  join(process.cwd(), '.venv', 'Scripts', 'python.exe'),
+  'python3',
+  'python'
+];
+
+const python = candidates.find((candidate) => existsSync(candidate) || Boolean(Bun.which(candidate))) ?? 'python3';
+
+const child = Bun.spawn([
+  python,
+  '-m',
+  'uvicorn',
+  'services.chronos_api.main:app',
+  '--host',
+  '127.0.0.1',
+  '--port',
+  '8001'
+], {
+  stdout: 'inherit',
+  stderr: 'inherit',
+  stdin: 'inherit'
+});
+
+process.on('SIGINT', () => {
+  child.kill();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  child.kill();
+  process.exit(0);
+});
+
+process.exit(await child.exited);

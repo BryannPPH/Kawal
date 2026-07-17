@@ -1,67 +1,90 @@
-import { ActivityLog } from './components/ActivityLog';
-import { EnginePanels } from './components/EnginePanels';
-import { SiteMap } from './components/SiteMap';
-import { TelemetryPanel } from './components/TelemetryPanel';
-import { useSiteStore } from './store/siteStore';
+import { useEffect, useState } from 'react';
+import { clearAuthSession, getStoredRole, getStoredUser, saveAuthSession } from './lib/authStorage';
+import { LoginPage } from './pages/login/LoginPage';
+import { ManagerPage } from './pages/manager/ManagerPage';
+import { WorkerPage } from './pages/worker/WorkerPage';
+import type { AuthUser, RouteName, UserRole } from './types/navigation';
+
+function getRouteFromPath(): RouteName {
+  if (window.location.pathname.startsWith('/login')) {
+    return 'login';
+  }
+
+  return window.location.pathname.startsWith('/worker') ? 'worker' : 'manager';
+}
 
 function App() {
-  const {
-    zones,
-    telemetry,
-    risks,
-    interventions,
-    inspections,
-    activity,
-    selectedZoneId,
-    setSelectedZone,
-    simulateTelemetryBurst,
-    resetSite
-  } = useSiteStore();
+  const [route, setRoute] = useState<RouteName>(getRouteFromPath);
+  const [role, setRole] = useState<UserRole | null>(getStoredRole);
+  const [user, setUser] = useState<AuthUser | null>(getStoredUser);
 
-  const selectedZone = zones.find((zone) => zone.id === selectedZoneId) ?? zones[0];
-  const selectedTelemetry = telemetry.find((reading) => reading.zoneId === selectedZone.id) ?? telemetry[0];
-  const siteRisk = Math.round(risks.reduce((total, risk) => total + risk.score, 0) / risks.length);
+  useEffect(() => {
+    const handlePopState = () => setRoute(getRouteFromPath());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (nextRoute: RouteName) => {
+    window.history.pushState({}, '', `/${nextRoute}`);
+    setRoute(nextRoute);
+  };
+
+  useEffect(() => {
+    if (!role || route === 'login') return;
+
+    if (role === 'worker' && route !== 'worker') {
+      navigate('worker');
+    }
+
+    if (role !== 'worker' && route !== 'manager') {
+      navigate('manager');
+    }
+  }, [role, route]);
+
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
+
+      const payload = (await response.json()) as { user?: AuthUser; error?: string };
+
+      if (!response.ok || !payload.user) {
+        return payload.error ?? 'Unable to sign in';
+      }
+
+      saveAuthSession(payload.user);
+      setUser(payload.user);
+      setRole(payload.user.role);
+      navigate(payload.user.role === 'worker' ? 'worker' : 'manager');
+      return null;
+    } catch {
+      return 'Unable to reach login server';
+    }
+  };
+
+  const logout = () => {
+    clearAuthSession();
+    setUser(null);
+    setRole(null);
+    navigate('login');
+  };
+
+  if (!role || route === 'login') {
+    return (
+      <main className="min-h-screen bg-[#F1F2F7] font-sans text-[#2F2C2A]">
+        <LoginPage onLogin={login} />
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-[#f6f7f9] text-slate-900">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-sky-700">Garuda Site Ops</p>
-            <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">IoT Risk Command Dashboard</h1>
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
-              <div className="text-xs font-medium text-slate-500">Site Risk</div>
-              <div className="mt-1 text-2xl font-bold">{siteRisk}</div>
-            </div>
-            <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
-              <div className="text-xs font-medium text-slate-500">Zones</div>
-              <div className="mt-1 text-2xl font-bold">{zones.length}</div>
-            </div>
-            <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
-              <div className="text-xs font-medium text-slate-500">Tasks</div>
-              <div className="mt-1 text-2xl font-bold">{inspections.length}</div>
-            </div>
-          </div>
-        </header>
-
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5">
-            <SiteMap zones={zones} risks={risks} selectedZoneId={selectedZoneId} onSelectZone={setSelectedZone} />
-            <EnginePanels zones={zones} risks={risks} interventions={interventions} inspections={inspections} />
-          </div>
-          <aside className="space-y-5">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel">
-              <div className="text-xs font-medium uppercase tracking-normal text-slate-500">Selected Zone</div>
-              <h2 className="mt-1 text-xl font-bold text-slate-950">{selectedZone.name}</h2>
-              <p className="mt-1 text-sm text-slate-500">{selectedZone.asset}</p>
-            </div>
-            <TelemetryPanel reading={selectedTelemetry} onSimulate={simulateTelemetryBurst} onReset={resetSite} />
-            <ActivityLog activity={activity} />
-          </aside>
-        </section>
-      </div>
+    <main className="min-h-screen bg-[#F1F2F7] font-sans text-[#2F2C2A]">
+      {route === 'worker' ? <WorkerPage user={user} onLogout={logout} /> : <ManagerPage onLogout={logout} />}
     </main>
   );
 }
