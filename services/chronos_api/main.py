@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, root_validator, validator
 
 MODEL_ID = "amazon/chronos-2"
 
-app = FastAPI(title="Garudie Chronos Forecast API", version="0.1.0")
+app = FastAPI(title="Kawal Chronos Forecast API", version="0.1.0")
 _pipeline = None
 _load_error: str | None = None
 

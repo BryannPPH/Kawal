@@ -9,13 +9,13 @@ on conflict (id) do update set
   role = excluded.role,
   password_hash = excluded.password_hash;
 
-insert into workers (id, name, role, task, status, zone, time, workload, fatigue, pay, "match") values
-  ('budi', 'Budi Santoso', 'Steel Crew', 'Install steel beam', 'working', 'Zone C', '02:14', 'Balanced', 24, 'Rp180.000', 94),
-  ('ag', 'Agus Pratama', 'Crane Signal', 'Crane signal check', 'working', 'Zone B', '01:42', 'Medium', 36, 'Rp150.000', 88),
-  ('rizky', 'Rizky Maulana', 'General Crew', 'Awaiting steel crew', 'waiting', 'Gate 2', '00:00', 'Low', 12, 'Rp95.000', 81),
-  ('dewi', 'Dewi Lestari', 'Safety Support', 'Ready near Zone B', 'waiting', 'Zone B', '00:00', 'Low', 18, 'Rp120.000', 84),
-  ('sari', 'Sari Ningsih', 'Scaffold Crew', 'Mandatory break', 'break', 'Rest Area', '00:12', 'Medium', 58, 'Rp145.000', 76),
-  ('dimas', 'Dimas Ardi', 'Inspector', 'Scaffold inspection', 'done', 'Zone A', '03:20', 'High', 44, 'Rp210.000', 89)
+insert into workers (id, name, role, task, status, zone, time, yesterday_worked_minutes, workload, fatigue, pay, "match") values
+  ('budi', 'Budi Santoso', 'Steel Crew', 'Install steel beam', 'working', 'Zone C', '02:14', 485, 'Balanced', 24, 'Rp180.000', 94),
+  ('ag', 'Agus Pratama', 'Crane Signal', 'Crane signal check', 'working', 'Zone B', '01:42', 535, 'Medium', 36, 'Rp150.000', 88),
+  ('rizky', 'Rizky Maulana', 'General Crew', 'Awaiting steel crew', 'waiting', 'Gate 2', '00:00', 430, 'Low', 12, 'Rp95.000', 81),
+  ('dewi', 'Dewi Lestari', 'Safety Support', 'Ready near Zone B', 'waiting', 'Zone B', '00:00', 475, 'Low', 18, 'Rp120.000', 84),
+  ('sari', 'Sari Ningsih', 'Scaffold Crew', 'Mandatory break', 'break', 'Rest Area', '00:12', 565, 'Medium', 58, 'Rp145.000', 76),
+  ('dimas', 'Dimas Ardi', 'Inspector', 'Scaffold inspection', 'done', 'Zone A', '03:20', 410, 'High', 44, 'Rp210.000', 89)
 on conflict (id) do update set
   name = excluded.name,
   role = excluded.role,
@@ -23,6 +23,7 @@ on conflict (id) do update set
   status = excluded.status,
   zone = excluded.zone,
   time = excluded.time,
+  yesterday_worked_minutes = excluded.yesterday_worked_minutes,
   workload = excluded.workload,
   fatigue = excluded.fatigue,
   pay = excluded.pay,

@@ -415,7 +415,16 @@ export function buildAssignmentCandidates(task: Task | null, workers: Worker[]):
       const fatigueThreshold = task.intensity === 'High' ? 25 : task.intensity === 'Low' ? 60 : 45;
       const fatigueMultiplier = task.intensity === 'High' ? 0.55 : task.intensity === 'Low' ? 0.2 : 0.35;
       const fatiguePenalty = Math.max(0, worker.fatigue - fatigueThreshold) * fatigueMultiplier;
-      const score = clampScore(Math.round(recommendationScore + statusScore + (sameZone ? 8 : 0) - fatiguePenalty));
+      const taskWorkload = (task.schedulerRecommendation.predictedWorkload ?? task.workload).toLowerCase();
+      const workloadPenalty = taskWorkload === 'high'
+        ? worker.workload.toLowerCase() === 'high' ? 16 : worker.workload.toLowerCase() === 'medium' ? 8 : 2
+        : taskWorkload === 'medium' && worker.workload.toLowerCase() === 'high'
+          ? 6
+          : 0;
+      const overtimeMinutes = Math.max(0, worker.yesterdayWorkedMinutes - 8 * 60);
+      const overtimeMultiplier = task.intensity === 'High' ? 1.4 : task.intensity === 'Low' ? 0.6 : 1;
+      const overtimePenalty = Math.min(24, Math.round((overtimeMinutes / 15) * overtimeMultiplier));
+      const score = clampScore(Math.round(recommendationScore + statusScore + (sameZone ? 8 : 0) - fatiguePenalty - workloadPenalty - overtimePenalty));
 
       return {
         worker,
@@ -432,7 +441,9 @@ export function buildAssignmentCandidates(task: Task | null, workers: Worker[]):
 function explainWorkerFit(worker: Worker, task: Task, sameZone: boolean) {
   const zone = sameZone ? 'same zone' : `currently in ${worker.zone}`;
   const status = worker.status === 'waiting' ? 'available now' : `${worker.status} status`;
-  return `${worker.role} is ${status}, ${zone}, with ${worker.fatigue}% fatigue for ${task.intensity.toLowerCase()} intensity and ${task.workload} workload.`;
+  const overtimeMinutes = Math.max(0, worker.yesterdayWorkedMinutes - 8 * 60);
+  const recovery = overtimeMinutes ? `, with ${overtimeMinutes}m overtime carry-over` : '';
+  return `${worker.role} is ${status}, ${zone}, with ${worker.fatigue}% fatigue${recovery} for ${task.intensity.toLowerCase()} intensity and ${task.workload} workload.`;
 }
 
 function clampScore(value: number) {

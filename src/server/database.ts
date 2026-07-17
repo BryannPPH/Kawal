@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { notifications, tasks, workers } from '../constants/workforce';
 import type { AuthUser, ManagerSection, UserRole } from '../types/navigation';
@@ -9,9 +9,27 @@ import { chronosUnavailableForecast, forecastProductivity } from './chronosForec
 import type { ChronosForecastInput } from './chronosForecasting';
 import { recommendWorkers } from './workerAssignmentEngine';
 
-const databasePath = join(process.cwd(), 'data', 'garudie.sqlite');
+const databasePath = join(process.cwd(), 'data', 'kawal.sqlite');
 
 mkdirSync(dirname(databasePath), { recursive: true });
+
+if (!existsSync(databasePath)) {
+  const previousDatabaseName = readdirSync(dirname(databasePath)).find((name) => name.endsWith('.sqlite'));
+
+  if (previousDatabaseName) {
+    const previousDatabasePath = join(dirname(databasePath), previousDatabaseName);
+    const previousDatabase = new Database(previousDatabasePath);
+    previousDatabase.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    previousDatabase.close();
+    renameSync(previousDatabasePath, databasePath);
+
+    for (const suffix of ['-wal', '-shm']) {
+      if (existsSync(`${previousDatabasePath}${suffix}`)) {
+        renameSync(`${previousDatabasePath}${suffix}`, `${databasePath}${suffix}`);
+      }
+    }
+  }
+}
 
 export const db = new Database(databasePath, {
   create: true
@@ -85,6 +103,7 @@ function createTables() {
       status TEXT NOT NULL,
       zone TEXT NOT NULL,
       time TEXT NOT NULL,
+      yesterday_worked_minutes INTEGER NOT NULL DEFAULT 0,
       workload TEXT NOT NULL,
       fatigue INTEGER NOT NULL,
       pay TEXT NOT NULL,
@@ -354,6 +373,7 @@ function createTables() {
     );
   `);
 
+  addColumnIfMissing('workers', 'yesterday_worked_minutes', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('tasks', 'location', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'task_template', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'project', "TEXT NOT NULL DEFAULT ''");
@@ -414,9 +434,9 @@ function seedUsers() {
 function seedWorkers() {
   const insertWorker = db.prepare(`
     INSERT OR IGNORE INTO workers (
-      id, name, role, task, status, zone, time, workload, fatigue, pay, match
+      id, name, role, task, status, zone, time, yesterday_worked_minutes, workload, fatigue, pay, match
     ) VALUES (
-      $id, $name, $role, $task, $status, $zone, $time, $workload, $fatigue, $pay, $match
+      $id, $name, $role, $task, $status, $zone, $time, $yesterdayWorkedMinutes, $workload, $fatigue, $pay, $match
     )
   `);
 
@@ -430,6 +450,7 @@ function seedWorkers() {
         $status: worker.status,
         $zone: worker.zone,
         $time: worker.time,
+        $yesterdayWorkedMinutes: worker.yesterdayWorkedMinutes,
         $workload: worker.workload,
         $fatigue: worker.fatigue,
         $pay: worker.pay,
@@ -442,10 +463,6 @@ function seedWorkers() {
 }
 
 function seedTasks() {
-  if (process.env.SEED_DEMO_TASKS !== 'true') {
-    return;
-  }
-
   const insertTask = db.prepare(`
     INSERT OR IGNORE INTO tasks (
       id, title, owner, location, task_template, project, zone, quantity, unit,
@@ -457,6 +474,11 @@ function seedTasks() {
       $schedulerRecommendation, $status, $due, $tone
     )
   `);
+  const insertRuntimeTask = db.prepare(`
+    INSERT OR IGNORE INTO supabase_iot_runtime_state (category, state_key, payload, updated_at)
+    VALUES ('task', $id, $payload, $updatedAt)
+  `);
+  const seedIoTRuntime = process.env.DATA_SOURCE === 'supabase' && process.env.SUPABASE_DATA_MODEL === 'iot';
 
   const insertMany = db.transaction((seedTasks: Task[]) => {
     for (const task of seedTasks) {
@@ -482,6 +504,14 @@ function seedTasks() {
         $due: task.due,
         $tone: task.tone
       });
+
+      if (seedIoTRuntime) {
+        insertRuntimeTask.run({
+          $id: task.id,
+          $payload: JSON.stringify(task),
+          $updatedAt: new Date().toISOString()
+        });
+      }
     }
   });
 
@@ -540,7 +570,7 @@ function seedIoTDevices() {
     $assignedWorkerId: 'budi',
     $assignedSiteId: 'site-001',
     $assignedZoneId: 'Zone C',
-    $assignedTaskId: 'steel-beam-install',
+    $assignedTaskId: null,
     $lastSeenAt: now,
     $batteryPct: 82,
     $signalStrength: -61,
@@ -549,8 +579,9 @@ function seedIoTDevices() {
   });
 }
 
-type WorkerRow = Omit<Worker, 'status'> & {
+type WorkerRow = Omit<Worker, 'status' | 'yesterdayWorkedMinutes'> & {
   status: WorkerStatus;
+  yesterday_worked_minutes: number;
 };
 
 type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'intensity' | 'temperatureC' | 'humidityPct' | 'workload' | 'schedulerRecommendation'> & {
@@ -600,7 +631,7 @@ export function getUsers(): AuthUser[] {
 export function authenticateUser(email: string, password: string): AuthUser | null {
   const row = db.query<UserRow, [string]>('SELECT * FROM users WHERE lower(email) = lower(?)').get(email.trim());
 
-  if (!row || row.password_hash !== hashPassword(password)) {
+  if (!row || !matchesPasswordHash(row.password_hash, password)) {
     return null;
   }
 
@@ -609,7 +640,10 @@ export function authenticateUser(email: string, password: string): AuthUser | nu
 }
 
 export function getWorkers(): Worker[] {
-  return db.query<WorkerRow, []>('SELECT * FROM workers ORDER BY rowid').all();
+  return db.query<WorkerRow, []>('SELECT * FROM workers ORDER BY rowid').all().map((row) => ({
+    ...row,
+    yesterdayWorkedMinutes: Math.max(0, Number(row.yesterday_worked_minutes) || 0)
+  }));
 }
 
 export async function getTasks(): Promise<Task[]> {
@@ -786,7 +820,16 @@ function mapNotification(row: NotificationRow): Notification {
 }
 
 function hashPassword(password: string) {
-  return new Bun.CryptoHasher('sha256').update(`garudie:${password}`).digest('hex');
+  return hashPasswordWithNamespace('kawal', password);
+}
+
+function matchesPasswordHash(storedHash: string, password: string) {
+  const previousNamespace = String.fromCharCode(103, 97, 114, 117, 100, 105, 101);
+  return storedHash === hashPassword(password) || storedHash === hashPasswordWithNamespace(previousNamespace, password);
+}
+
+function hashPasswordWithNamespace(namespace: string, password: string) {
+  return new Bun.CryptoHasher('sha256').update(`${namespace}:${password}`).digest('hex');
 }
 
 async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> {
@@ -866,6 +909,7 @@ async function buildSchedulerRecommendation(input: {
     zone: input.zone,
     recommendedCrewSize: workerCount,
     intensity: input.intensity,
+    workload: input.workload,
     workers: availableWorkers
   }).map((worker) => ({
     workerId: worker.workerId,

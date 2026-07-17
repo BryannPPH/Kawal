@@ -29,7 +29,7 @@ export function NotificationsView({ notifications, unreadCount, onOpenNotificati
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#2F2C2A]">All Notifications</p>
-            <p className="mt-1 text-sm text-[#776B63]">Open an item to jump to the related worker, task, IoT panel, or incident.</p>
+            <p className="mt-1 text-sm text-[#776B63]">Open an item to jump to the related worker, task, Kawal IoT, or incident.</p>
           </div>
           <Pill className="bg-[#FFEFE6] text-[#C95119]">{notifications.length} total</Pill>
         </div>

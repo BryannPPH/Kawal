@@ -7,6 +7,7 @@ export type WorkerAssignmentInput = {
   zone?: string;
   recommendedCrewSize: number;
   intensity?: TaskIntensity;
+  workload?: string;
   workers: Worker[];
 };
 
@@ -83,6 +84,17 @@ function scoreWorker(worker: Worker, input: WorkerAssignmentInput): WorkerRecomm
     reasons.push('Workload is manageable');
   }
 
+  const taskWorkload = input.workload?.toLowerCase();
+
+  if (taskWorkload === 'high') {
+    const workloadPenalty = worker.workload.toLowerCase() === 'high' ? 16 : worker.workload.toLowerCase() === 'medium' ? 8 : 2;
+    score -= workloadPenalty;
+    reasons.push(`High task workload applies ${workloadPenalty} current-load penalty`);
+  } else if (taskWorkload === 'medium' && worker.workload.toLowerCase() === 'high') {
+    score -= 6;
+    reasons.push('Current workload is high for this assignment');
+  }
+
   if (worker.fatigue >= 65) {
     score -= 24;
     reasons.push('Fatigue status requires caution');
@@ -101,6 +113,15 @@ function scoreWorker(worker: Worker, input: WorkerAssignmentInput): WorkerRecomm
   } else if (input.intensity === 'Low') {
     score += 3;
     reasons.push('Low-intensity task has lighter fatigue demand');
+  }
+
+  const overtimeMinutes = Math.max(0, worker.yesterdayWorkedMinutes - 8 * 60);
+
+  if (overtimeMinutes > 0) {
+    const intensityMultiplier = input.intensity === 'High' ? 1.4 : input.intensity === 'Low' ? 0.6 : 1;
+    const overtimePenalty = Math.min(24, Math.round((overtimeMinutes / 15) * intensityMultiplier));
+    score -= overtimePenalty;
+    reasons.push(`${overtimeMinutes}m prior-day overtime applies ${overtimePenalty} recovery penalty`);
   }
 
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)));

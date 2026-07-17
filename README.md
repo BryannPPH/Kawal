@@ -18,7 +18,7 @@ React + TypeScript dashboard with a Bun API backend and SQLite or Supabase data 
 React dashboard
   -> Vite /api proxy
   -> Bun API
-  -> SQLite database at data/garudie.sqlite or Supabase REST
+  -> SQLite database at data/kawal.sqlite or Supabase REST
 ```
 
 SQLite is initialized and seeded automatically when the API starts. Supabase is enabled with `DATA_SOURCE=supabase`.
@@ -104,7 +104,7 @@ The IoT communication layer stores wearable telemetry, creates SOS incidents, cr
 
 ## Chronos-2 Forecast Service
 
-Garudie uses a separate local FastAPI service for Chronos-2 inference. Install and run it before using Chronos forecasts:
+Kawal uses a separate local FastAPI service for Chronos-2 inference. Install and run it before using Chronos forecasts:
 
 ```bash
 python -m pip install -r services/chronos_api/requirements.txt

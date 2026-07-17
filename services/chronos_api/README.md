@@ -1,6 +1,6 @@
 # Chronos Forecast API
 
-Local FastAPI service for Garudie productivity forecasting with Chronos-2.
+Local FastAPI service for Kawal productivity forecasting with Chronos-2.
 
 ## Setup
 

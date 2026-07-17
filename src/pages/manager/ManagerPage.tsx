@@ -149,6 +149,13 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     setAlertsOpen(false);
   };
 
+  const openWorkerDetails = (workerId: string) => {
+    setSelectedWorkerId(workerId);
+    window.history.pushState({}, '', `/manager/workers/${workerId}`);
+    setActiveSection('workers');
+    setAlertsOpen(false);
+  };
+
   const openNotificationsPage = () => {
     window.history.pushState({}, '', '/manager/notifications');
     setActiveSection('notifications');
@@ -281,7 +288,15 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     }
 
     if (activeSection === 'tasks') {
-      return <TasksView tasks={tasks} workers={workers} onAutoAssign={autoAssignTask} onReviewCompletion={reviewTaskCompletion} />;
+      return (
+        <TasksView
+          tasks={tasks}
+          workers={workers}
+          onAutoAssign={autoAssignTask}
+          onReviewCompletion={reviewTaskCompletion}
+          onOpenWorker={openWorkerDetails}
+        />
+      );
     }
 
     if (activeSection === 'payroll') {
