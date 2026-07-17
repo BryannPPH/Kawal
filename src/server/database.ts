@@ -109,7 +109,11 @@ function createTables() {
       scheduler_recommendation TEXT NOT NULL DEFAULT '{}',
       status TEXT NOT NULL,
       due TEXT NOT NULL,
-      tone TEXT NOT NULL
+      tone TEXT NOT NULL,
+      completion_proof_image TEXT,
+      completion_proof_submitted_at TEXT,
+      completion_proof_status TEXT,
+      completion_proof_note TEXT
     );
 
     CREATE TABLE IF NOT EXISTS notifications (
@@ -353,6 +357,10 @@ function createTables() {
   addColumnIfMissing('tasks', 'task_workload', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'notes', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('tasks', 'scheduler_recommendation', "TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing('tasks', 'completion_proof_image', 'TEXT');
+  addColumnIfMissing('tasks', 'completion_proof_submitted_at', 'TEXT');
+  addColumnIfMissing('tasks', 'completion_proof_status', 'TEXT');
+  addColumnIfMissing('tasks', 'completion_proof_note', 'TEXT');
   addColumnIfMissing('notifications', 'created_at', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('rest_requests', 'fatigue_score_at_request', 'INTEGER');
   backfillNotificationTimestamps();
@@ -536,6 +544,10 @@ type TaskRow = Omit<Task, 'tone' | 'taskTemplate' | 'temperatureC' | 'humidityPc
   humidity_pct: number | null;
   task_workload: string;
   scheduler_recommendation: string;
+  completion_proof_image: string | null;
+  completion_proof_submitted_at: string | null;
+  completion_proof_status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | null;
+  completion_proof_note: string | null;
 };
 
 type EnvironmentRow = {
@@ -771,7 +783,11 @@ async function mapTask(row: TaskRow, availableWorkers: Worker[]): Promise<Task> 
     schedulerRecommendation: await buildSchedulerRecommendation(schedulerInput, availableWorkers),
     status: row.status,
     due: row.due,
-    tone: row.tone
+    tone: row.tone,
+    completionProofImage: row.completion_proof_image ?? undefined,
+    completionProofSubmittedAt: row.completion_proof_submitted_at ?? undefined,
+    completionProofStatus: row.completion_proof_status ?? undefined,
+    completionProofNote: row.completion_proof_note ?? undefined
   };
 }
 

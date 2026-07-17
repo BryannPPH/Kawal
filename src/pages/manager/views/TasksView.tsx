@@ -1,4 +1,4 @@
-import { CalendarClock, ClipboardCheck, ClipboardList, Clock, InfoIcon, UserCheck, X } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, Clock, ImageIcon, InfoIcon, UserCheck, X, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pill } from '../../../components/ui/Pill';
 import { toneStyles } from '../../../constants/workforce';
@@ -6,7 +6,15 @@ import type { Task } from '../../../types/workforce';
 import { MetricCard } from '../components/MetricCard';
 import { TaskPanel } from '../components/TaskPanel';
 
-export function TasksView({ tasks, onAutoAssign }: { tasks: Task[]; onAutoAssign: (taskId: string) => Promise<Task> }) {
+export function TasksView({
+  tasks,
+  onAutoAssign,
+  onReviewCompletion
+}: {
+  tasks: Task[];
+  onAutoAssign: (taskId: string) => Promise<Task>;
+  onReviewCompletion: (taskId: string, decision: 'accept' | 'reject', note?: string) => Promise<Task>;
+}) {
   const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -124,6 +132,7 @@ export function TasksView({ tasks, onAutoAssign }: { tasks: Task[]; onAutoAssign
           task={selectedTask}
           assigning={assigningTaskId === selectedTask.id}
           onAssign={() => assignTask(selectedTask.id)}
+          onReviewCompletion={(decision, note) => onReviewCompletion(selectedTask.id, decision, note)}
           onClose={() => setSelectedTaskId(null)}
         />
       ) : null}
@@ -135,14 +144,34 @@ function TaskDetailModal({
   task,
   assigning,
   onAssign,
+  onReviewCompletion,
   onClose
 }: {
   task: Task;
   assigning: boolean;
   onAssign: () => void;
+  onReviewCompletion: (decision: 'accept' | 'reject', note?: string) => Promise<Task>;
   onClose: () => void;
 }) {
+  const [reviewing, setReviewing] = useState<'accept' | 'reject' | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
   const canAssign = task.owner === 'Unassigned' && task.schedulerRecommendation.selectedWorkerRecommendations.length > 0;
+  const hasProof = Boolean(task.completionProofImage);
+  const canReviewProof = task.status.toLowerCase().includes('review') && hasProof && task.completionProofStatus !== 'ACCEPTED';
+
+  const submitReview = async (decision: 'accept' | 'reject') => {
+    setReviewing(decision);
+    setReviewError(null);
+
+    try {
+      await onReviewCompletion(decision, decision === 'reject' ? rejectNote : undefined);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : 'Unable to review task');
+    } finally {
+      setReviewing(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#292622]/45 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="task-detail-title">
@@ -200,6 +229,77 @@ function TaskDetailModal({
             <Info label="Required PPE and certifications" value={task.schedulerRecommendation.requiredPpeAndCertifications.join(', ') || 'No extra PPE'} />
             <Info label="Dependency status" value={task.schedulerRecommendation.dependencyStatus} />
           </div>
+
+          {hasProof ? (
+            <div className="mt-4 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-[#2F2C2A]">
+                    <ImageIcon size={16} className="text-[#FD7124]" />
+                    Completion Proof
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-[#776B63]">
+                    Submitted {task.completionProofSubmittedAt ? formatFinishTime(task.completionProofSubmittedAt) : 'recently'} by {task.owner}.
+                  </p>
+                </div>
+                <Pill className={task.completionProofStatus === 'REJECTED' ? 'bg-[#FFEFE6] text-[#B84011]' : 'bg-[#FFF7ED] text-[#9A5719]'}>
+                  {task.completionProofStatus ?? 'PENDING'}
+                </Pill>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                <img
+                  src={task.completionProofImage}
+                  alt={`Completion proof for ${task.taskTemplate}`}
+                  className="h-56 w-full rounded-xl border border-[#F3D7C8] object-cover"
+                />
+                <div className="flex min-h-56 flex-col rounded-xl border border-[#F3D7C8] bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-[#A09188]">Manager review</p>
+                  <p className="mt-2 text-sm leading-6 text-[#776B63]">
+                    Accept if the photo clearly matches the assigned work and location. Reject if the worker needs to submit a better proof.
+                  </p>
+                  {task.completionProofNote ? (
+                    <p className="mt-3 rounded-xl bg-[#FFF8F4] px-3 py-2 text-xs font-semibold text-[#776B63]">{task.completionProofNote}</p>
+                  ) : null}
+                  {canReviewProof ? (
+                    <>
+                      <textarea
+                        value={rejectNote}
+                        onChange={(event) => setRejectNote(event.target.value)}
+                        className="mt-3 min-h-20 rounded-xl border border-[#F3D7C8] bg-[#FFFDFB] px-3 py-2 text-sm text-[#2F2C2A] outline-none transition placeholder:text-[#A09188] focus:border-[#FD7124] focus:ring-2 focus:ring-[#FFEFE6]"
+                        placeholder="Optional rejection note"
+                      />
+                      {reviewError ? <p className="mt-3 rounded-xl bg-[#FFEFE6] px-3 py-2 text-xs font-semibold text-[#B84011]">{reviewError}</p> : null}
+                      <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => submitReview('reject')}
+                          disabled={Boolean(reviewing)}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#F3D7C8] bg-white text-sm font-semibold text-[#B84011] transition hover:bg-[#FFEFE6] disabled:opacity-60"
+                        >
+                          <XCircle size={16} />
+                          {reviewing === 'reject' ? 'Rejecting...' : 'Reject'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitReview('accept')}
+                          disabled={Boolean(reviewing)}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#FD7124] text-sm font-semibold text-white transition hover:bg-[#E85F18] disabled:opacity-60"
+                        >
+                          <CheckCircle2 size={16} />
+                          {reviewing === 'accept' ? 'Accepting...' : 'Accept'}
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : task.status.toLowerCase().includes('review') ? (
+            <div className="mt-4 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+              <p className="text-sm font-semibold text-[#2F2C2A]">Completion proof missing</p>
+              <p className="mt-1 text-xs leading-5 text-[#776B63]">Worker must submit a direct photo or upload before manager review.</p>
+            </div>
+          ) : null}
 
           {task.schedulerRecommendation.safetyAndOperationalWarnings.length > 0 ? (
             <div className="mt-4 rounded-xl border border-[#F3D7C8] bg-white px-3 py-3">

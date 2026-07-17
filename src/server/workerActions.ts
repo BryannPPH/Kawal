@@ -99,26 +99,91 @@ export async function performWorkerPpeCheck(workerId: string, imageDataUrl: stri
   };
 }
 
-export async function completeWorkerAssignment(workerId: string) {
+export async function completeWorkerAssignment(workerId: string, imageDataUrl: string) {
+  if (!isImageDataUrl(imageDataUrl)) {
+    throw new Error('Completion proof photo is required');
+  }
+
   const worker = getRequiredWorker(workerId);
   const activeTasks = (await getTasks()).filter((task) => task.owner === worker.name && !['Done', 'Review'].includes(task.status));
+  const submittedAt = new Date().toISOString();
+
+  if (activeTasks.length === 0) {
+    throw new Error('No active task is ready for completion proof');
+  }
 
   db.prepare('UPDATE workers SET status = ?, time = ? WHERE id = ?').run('done', worker.time, workerId);
 
   for (const task of activeTasks) {
-    db.prepare('UPDATE tasks SET status = ?, due = ?, tone = ? WHERE id = ?').run('Review', 'Ready', 'success', task.id);
+    db.prepare(`
+      UPDATE tasks
+      SET status = ?, due = ?, tone = ?, completion_proof_image = ?, completion_proof_submitted_at = ?, completion_proof_status = ?, completion_proof_note = NULL
+      WHERE id = ?
+    `).run('Review', 'Proof ready', 'success', imageDataUrl, submittedAt, 'PENDING', task.id);
   }
 
   createManagerNotification({
-    title: 'Task ready for review',
-    detail: `${worker.name} completed ${activeTasks[0]?.title ?? worker.task}.`,
+    title: 'Task proof ready',
+    detail: `${worker.name} submitted a completion photo for ${activeTasks[0]?.title ?? worker.task}.`,
     tone: 'success',
-    targetLabel: 'Review task',
+    targetLabel: 'Review proof',
     targetSection: 'tasks',
     targetWorkerId: worker.id
   });
 
   return getWorkerAppData(workerId);
+}
+
+export async function reviewWorkerTaskCompletion(taskId: string, decision: 'accept' | 'reject', note?: string) {
+  const task = (await getTasks()).find((item) => item.id === taskId);
+
+  if (!task) {
+    return null;
+  }
+
+  const worker = getWorkers().find((item) => item.name === task.owner) ?? null;
+  const reviewedAt = new Date().toISOString();
+
+  if (decision === 'accept') {
+    db.prepare(`
+      UPDATE tasks
+      SET status = ?, due = ?, tone = ?, completion_proof_status = ?, completion_proof_note = ?
+      WHERE id = ?
+    `).run('Done', 'Done', 'success', 'ACCEPTED', note?.trim() || 'Accepted by manager', taskId);
+
+    if (worker) {
+      db.prepare('UPDATE workers SET status = ? WHERE id = ?').run('done', worker.id);
+      createManagerNotification({
+        title: 'Completion accepted',
+        detail: `${task.title} was accepted by manager at ${formatTime(new Date(reviewedAt))}.`,
+        tone: 'success',
+        targetLabel: 'Open task',
+        targetSection: 'tasks',
+        targetWorkerId: worker.id
+      });
+    }
+  } else {
+    const rejectionNote = note?.trim() || 'Please submit a clearer completion photo.';
+    db.prepare(`
+      UPDATE tasks
+      SET status = ?, due = ?, tone = ?, completion_proof_status = ?, completion_proof_note = ?
+      WHERE id = ?
+    `).run('In Progress', 'Needs revision', 'warning', 'REJECTED', rejectionNote, taskId);
+
+    if (worker) {
+      db.prepare('UPDATE workers SET status = ? WHERE id = ?').run('working', worker.id);
+      createManagerNotification({
+        title: 'Completion needs revision',
+        detail: `${task.title} was rejected. ${rejectionNote}`,
+        tone: 'warning',
+        targetLabel: 'Open task',
+        targetSection: 'tasks',
+        targetWorkerId: worker.id
+      });
+    }
+  }
+
+  return (await getTasks()).find((item) => item.id === taskId) ?? null;
 }
 
 export async function reportWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
@@ -341,6 +406,10 @@ function formatTime(value: Date) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(value);
+}
+
+function isImageDataUrl(value: string) {
+  return /^data:image\/(png|jpe?g|webp);base64,/i.test(value);
 }
 
 function makeEnvelope(

@@ -87,6 +87,10 @@ export type Task = {
   status: string;
   due: string;
   tone: Tone;
+  completionProofImage?: string;
+  completionProofSubmittedAt?: string;
+  completionProofStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  completionProofNote?: string;
 };
 
 export type Notification = {

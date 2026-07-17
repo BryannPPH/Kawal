@@ -10,7 +10,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   Camera,
+  RotateCcw,
   TimerReset,
+  Upload,
   User,
   UserRoundCheck
 } from 'lucide-react';
@@ -92,6 +94,10 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
   const [ppeBusy, setPpeBusy] = useState(false);
   const [ppeError, setPpeError] = useState<string | null>(null);
   const [ppeCapturedImage, setPpeCapturedImage] = useState<string | null>(null);
+  const [proofModalOpen, setProofModalOpen] = useState(false);
+  const [proofBusy, setProofBusy] = useState(false);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [proofCapturedImage, setProofCapturedImage] = useState<string | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -292,6 +298,41 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
     setHazardNote('');
   };
 
+  const submitCompletionProof = async (imageDataUrl: string) => {
+    if (!workerId) {
+      return;
+    }
+
+    setProofBusy(true);
+    setProofError(null);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/workers/${workerId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ imageDataUrl })
+      });
+      const payload = (await response.json()) as WorkerAppData | { error?: string };
+
+      if (!response.ok || 'error' in payload) {
+        throw new Error('error' in payload ? payload.error ?? 'Unable to submit proof' : 'Unable to submit proof');
+      }
+
+      setData(payload as WorkerAppData);
+      setMessage('Completion proof sent to manager review.');
+      setProofCapturedImage(null);
+      setProofModalOpen(false);
+    } catch (caughtError) {
+      setProofError(caughtError instanceof Error ? caughtError.message : 'Unable to submit proof');
+    } finally {
+      setProofBusy(false);
+    }
+  };
+
   const triggerSos = async () => {
     if (!workerId || busyAction === 'sos') {
       return;
@@ -458,7 +499,11 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
               onStart={startTaskWithPpe}
               onPause={() => submitStatus('waiting')}
               onRest={() => runAction('rest-request', {}, 'Rest request sent.')}
-              onComplete={() => runAction('complete', {}, 'Assignment sent for review.')}
+              onComplete={() => {
+                setProofError(null);
+                setProofCapturedImage(null);
+                setProofModalOpen(true);
+              }}
             />
           ) : null}
           {worker && activeTab === 'tasks' ? <TasksPanel tasks={data.tasks} worker={worker} /> : null}
@@ -511,6 +556,27 @@ export function WorkerPage({ user, onLogout }: WorkerPageProps) {
                 setPpeError(null);
               }
             }}
+          />
+        ) : null}
+        {proofModalOpen ? (
+          <TaskProofModal
+            busy={proofBusy}
+            error={proofError}
+            capturedImage={proofCapturedImage}
+            onClose={() => {
+              if (!proofBusy) {
+                setProofModalOpen(false);
+                setProofCapturedImage(null);
+                setProofError(null);
+              }
+            }}
+            onCapture={setProofCapturedImage}
+            onUpload={setProofCapturedImage}
+            onRetake={() => {
+              setProofCapturedImage(null);
+              setProofError(null);
+            }}
+            onSubmit={submitCompletionProof}
           />
         ) : null}
 
@@ -570,6 +636,8 @@ function HomePanel({
   onComplete: () => void;
 }) {
   const working = worker.status === 'working';
+  const proofPending = Boolean(task?.status.toLowerCase().includes('review') || task?.completionProofStatus === 'PENDING');
+  const completed = Boolean(task?.status.toLowerCase() === 'done' || task?.completionProofStatus === 'ACCEPTED');
 
   return (
     <div className="flex min-h-full flex-col space-y-4">
@@ -602,7 +670,7 @@ function HomePanel({
           <ProcedureStep done={working || worker.status === 'done'} icon={UserRoundCheck} label="Checked in for assigned zone" />
           <ProcedureStep done={latestPpeCheck?.status === 'PASSED'} icon={ShieldCheck} label="Helmet and harness verified by camera" />
           <ProcedureStep done={Boolean(task)} icon={MapPin} label="Task and location confirmed" />
-          <ProcedureStep done={worker.status === 'done'} icon={BriefcaseBusiness} label="Completion sent for review" />
+          <ProcedureStep done={proofPending || completed} icon={BriefcaseBusiness} label={completed ? 'Completion accepted by manager' : 'Completion sent for review'} />
         </ul>
         {latestPpeCheck ? (
           <p className="mt-3 rounded-xl bg-[#FFF8F4] px-3 py-2 text-xs font-semibold text-[#776B63]">
@@ -625,9 +693,9 @@ function HomePanel({
             <TimerReset size={16} />
             Request Rest
           </Button>
-          <Button variant="primary" onClick={onComplete} disabled={busyAction === 'complete'}>
+          <Button variant="primary" onClick={onComplete} disabled={busyAction === 'complete' || proofPending || completed}>
             <ClipboardCheck size={16} />
-            Complete
+            {proofPending ? 'In Review' : completed ? 'Done' : 'Complete'}
           </Button>
         </div>
       </section>
@@ -663,6 +731,11 @@ function TasksPanel({ tasks, worker }: { tasks: Task[]; worker: Worker }) {
               {task.schedulerRecommendation.safetyAndOperationalWarnings.length ? (
                 <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#8A4B02]">
                   {task.schedulerRecommendation.safetyAndOperationalWarnings[0]}
+                </p>
+              ) : null}
+              {task.completionProofStatus ? (
+                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#776B63]">
+                  Proof {task.completionProofStatus.toLowerCase()}{task.completionProofNote ? ` / ${task.completionProofNote}` : ''}
                 </p>
               ) : null}
             </div>
@@ -1137,6 +1210,219 @@ function PpeCameraModal({
           <Camera size={18} />
           Capture & Verify
         </button>
+      </div>
+    </div>
+  );
+}
+
+function TaskProofModal({
+  busy,
+  error,
+  capturedImage,
+  onClose,
+  onCapture,
+  onUpload,
+  onRetake,
+  onSubmit
+}: {
+  busy: boolean;
+  error: string | null;
+  capturedImage: string | null;
+  onClose: () => void;
+  onCapture: (imageDataUrl: string) => void;
+  onUpload: (imageDataUrl: string) => void;
+  onRetake: () => void;
+  onSubmit: (imageDataUrl: string) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function startCamera() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Camera is not available in this browser');
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 960 }
+          },
+          audio: false
+        });
+
+        if (cancelled) {
+          stopStream(stream);
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch (caughtError) {
+        if (!cancelled) {
+          setCameraError(caughtError instanceof Error ? caughtError.message : 'Unable to open camera');
+        }
+      }
+    }
+
+    if (!capturedImage) {
+      startCamera();
+    }
+
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        stopStream(streamRef.current);
+        streamRef.current = null;
+      }
+    };
+  }, [capturedImage]);
+
+  const captureFrame = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError('Camera is still loading. Try again in a second.');
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      setCameraError('Unable to capture camera frame.');
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    onCapture(canvas.toDataURL('image/jpeg', 0.82));
+  };
+
+  const uploadFile = (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setCameraError('Upload must be an image file.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onUpload(reader.result);
+        setCameraError(null);
+      }
+    };
+    reader.onerror = () => setCameraError('Unable to read uploaded image.');
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="absolute inset-0 z-50 grid place-items-center bg-[#FFFDFB]/84 px-5 backdrop-blur-sm">
+      <div className="w-full max-w-[360px] overflow-hidden rounded-[1.6rem] border border-[#F3D7C8] bg-white text-[#2F2C2A] shadow-[0_24px_70px_rgba(76,48,35,0.24)]">
+        <div className="flex items-start justify-between gap-3 border-b border-[#F3D7C8] px-4 py-4">
+          <div>
+            <p className="text-sm font-bold">Task completion proof</p>
+            <p className="mt-1 text-xs leading-5 text-[#776B63]">Take or upload the work photo before manager review.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#F3D7C8] bg-white text-[#776B63] transition hover:bg-[#FFEFE6] disabled:opacity-50"
+            aria-label="Close proof modal"
+          >
+            x
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4]">
+            {capturedImage ? (
+              <img src={capturedImage} alt="Task completion proof preview" className="h-64 w-full object-cover" />
+            ) : (
+              <div className="relative h-64 bg-[#2F2C2A]">
+                <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
+                <div className="pointer-events-none absolute inset-4 rounded-[1.1rem] border border-white/45" />
+                {cameraError ? (
+                  <div className="absolute inset-0 grid place-items-center bg-[#2F2C2A]/86 px-5 text-center">
+                    <p className="text-sm font-semibold leading-6 text-white">{cameraError}</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <canvas ref={canvasRef} className="hidden" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => uploadFile(event.target.files?.[0])}
+          />
+
+          {error ? <p className="mt-3 rounded-xl bg-[#FFEFE6] px-3 py-2 text-sm font-semibold text-[#B84011]">{error}</p> : null}
+
+          {capturedImage ? (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onRetake}
+                disabled={busy}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-[#F3D7C8] bg-white text-sm font-bold text-[#3D3835] transition hover:bg-[#FFF8F4] disabled:opacity-60"
+              >
+                <RotateCcw size={16} />
+                Retake
+              </button>
+              <button
+                type="button"
+                onClick={() => onSubmit(capturedImage)}
+                disabled={busy}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18] disabled:opacity-60"
+              >
+                <ClipboardCheck size={16} />
+                {busy ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-[#F3D7C8] bg-white text-sm font-bold text-[#3D3835] transition hover:bg-[#FFF8F4] disabled:opacity-60"
+              >
+                <Upload size={16} />
+                Upload
+              </button>
+              <button
+                type="button"
+                onClick={captureFrame}
+                disabled={busy || Boolean(cameraError)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#FD7124] text-sm font-bold text-white transition hover:bg-[#E85F18] disabled:opacity-60"
+              >
+                <Camera size={16} />
+                Capture
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

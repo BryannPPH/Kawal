@@ -1,20 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
 
+const originalFetch = globalThis.fetch;
+
 describe('Chronos-2 FastAPI client', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
   });
 
   it('returns the FastAPI Chronos forecast response', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
       futureProductivity: '4.2 units/worker-hour',
       delayPrediction: 'Delay risk low under Chronos productivity forecast.',
       suggestedAdditionalCrew: 0,
       confidence: 'HISTORICAL',
       model: 'amazon/chronos-2',
       forecastValues: [4.1, 4.2, 4.3]
-    }), { status: 200 })));
+    }), { status: 200 })) as typeof fetch;
 
     const forecast = await forecastProductivity({
       historicalCompletedQuantity: [70, 78, 80],

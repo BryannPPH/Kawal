@@ -43,6 +43,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     markNotificationRead,
     createTask,
     autoAssignTask,
+    reviewTaskCompletion,
     getWorkerRestRecommendation,
     grantWorkerRest
   } = useWorkforceData();
@@ -276,7 +277,7 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
     }
 
     if (activeSection === 'tasks') {
-      return <TasksView tasks={tasks} onAutoAssign={autoAssignTask} />;
+      return <TasksView tasks={tasks} onAutoAssign={autoAssignTask} onReviewCompletion={reviewTaskCompletion} />;
     }
 
     if (activeSection === 'payroll') {

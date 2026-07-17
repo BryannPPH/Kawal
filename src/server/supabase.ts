@@ -6,6 +6,7 @@ import { estimateCapacity, inferWorkload } from './capacityEstimator';
 import { chronosUnavailableForecast, forecastProductivity } from './chronosForecasting';
 import { evaluateRisk, parseTopic, topicPrefix, validateEnvelope } from './iot';
 import type { Envelope } from './iot';
+import { getLatestPpeCheck, runPpeCheck } from './ppe';
 import { recommendWorkers } from './workerAssignmentEngine';
 
 const configuredSupabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
@@ -19,6 +20,15 @@ const fallbackUsers = [
   { id: 'manager-demo', name: 'Project Manager', email: 'manager@gmail.com', role: 'manager' },
   { id: 'worker-demo', name: 'Budi Santoso', email: 'worker@gmail.com', role: 'worker' }
 ] satisfies AuthUser[];
+
+const iotTaskProofs = new Map<string, {
+  workerId: string;
+  imageDataUrl: string;
+  submittedAt: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  note?: string;
+}>();
+const iotRuntimeNotifications: Notification[] = [];
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey);
@@ -202,6 +212,13 @@ export async function autoAssignSupabaseTask(taskId: string): Promise<Task | nul
 
 export async function markSupabaseNotificationRead(notificationId: string): Promise<Notification | null> {
   if (shouldUseSupabaseIoTModel()) {
+    const runtimeNotification = iotRuntimeNotifications.find((item) => item.id === notificationId);
+
+    if (runtimeNotification) {
+      runtimeNotification.read = true;
+      return { ...runtimeNotification };
+    }
+
     const notification = (await getSupabaseIoTSnapshot()).notifications.find((item) => item.id === notificationId);
     return notification ? { ...notification, read: true } : null;
   }
@@ -324,11 +341,20 @@ export async function getSupabaseWorkerAppData(workerId: string) {
     notifications: notificationRows.map(mapNotification),
     currentBreak: breakRows[0] ?? null,
     latestRisk: riskRows[0] ?? null,
-    activeIncident: incidentRows[0] ? mapIncident(incidentRows[0]) : null
+    activeIncident: incidentRows[0] ? mapIncident(incidentRows[0]) : null,
+    latestPpeCheck: getLatestPpeCheck(workerId)
   };
 }
 
 export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 'waiting' | 'working' | 'break' | 'done') {
+  if (status === 'working') {
+    const latestPpeCheck = getLatestPpeCheck(workerId);
+
+    if (latestPpeCheck?.status !== 'PASSED') {
+      throw new Error('PPE verification is required before starting task');
+    }
+  }
+
   if (shouldUseSupabaseIoTModel()) {
     const data = await getSupabaseIoTWorkerAppData(workerId);
     return {
@@ -359,13 +385,57 @@ export async function updateSupabaseWorkerShiftStatus(workerId: string, status: 
   return getSupabaseWorkerAppData(workerId);
 }
 
-export async function completeSupabaseWorkerAssignment(workerId: string) {
+export async function performSupabaseWorkerPpeCheck(workerId: string, imageDataUrl: string) {
+  const data = await getSupabaseWorkerAppData(workerId);
+
+  if (!data.worker) {
+    throw new Error('Worker not found');
+  }
+
+  const check = await runPpeCheck({
+    workerId,
+    taskId: data.tasks[0]?.id ?? null,
+    imageDataUrl
+  });
+  const nextData = await getSupabaseWorkerAppData(workerId);
+
+  return {
+    ...nextData,
+    latestPpeCheck: check,
+    ppeCheck: check
+  };
+}
+
+export async function completeSupabaseWorkerAssignment(workerId: string, imageDataUrl: string) {
+  if (!isImageDataUrl(imageDataUrl)) {
+    throw new Error('Completion proof photo is required');
+  }
+
   if (shouldUseSupabaseIoTModel()) {
+    const submittedAt = new Date().toISOString();
+    iotTaskProofs.set('iot-live-shift', {
+      workerId,
+      imageDataUrl,
+      submittedAt,
+      status: 'PENDING'
+    });
+    iotRuntimeNotifications.unshift({
+      id: `iot-task-proof-${crypto.randomUUID()}`,
+      title: 'Task proof ready',
+      detail: 'Budi Santoso submitted a completion photo for IoT monitored field work.',
+      tone: 'success',
+      targetLabel: 'Review proof',
+      targetSection: 'tasks',
+      targetWorkerId: workerId,
+      createdAt: submittedAt,
+      read: false
+    });
+
     const data = await getSupabaseIoTWorkerAppData(workerId);
     return {
       ...data,
       worker: data.worker ? { ...data.worker, status: 'done' as const } : data.worker,
-      action: { ok: true, fallback: true }
+      action: { ok: true, fallback: true, proofSubmitted: true }
     };
   }
 
@@ -378,19 +448,86 @@ export async function completeSupabaseWorkerAssignment(workerId: string) {
   await patchRows('workers', `id=eq.${encodeFilterValue(workerId)}`, { status: 'done' });
   await patchRows('tasks', `owner=eq.${encodeFilterValue(data.worker.name)}`, {
     status: 'Review',
-    due: 'Ready',
-    tone: 'success'
+    due: 'Proof ready',
+    tone: 'success',
+    completion_proof_image: imageDataUrl,
+    completion_proof_submitted_at: new Date().toISOString(),
+    completion_proof_status: 'PENDING',
+    completion_proof_note: null
   });
   await createSupabaseNotification({
-    title: 'Task ready for review',
-    detail: `${data.worker.name} completed ${data.tasks[0]?.title ?? data.worker.task}.`,
+    title: 'Task proof ready',
+    detail: `${data.worker.name} submitted a completion photo for ${data.tasks[0]?.title ?? data.worker.task}.`,
     tone: 'success',
-    targetLabel: 'Review task',
+    targetLabel: 'Review proof',
     targetSection: 'tasks',
     targetWorkerId: workerId
   });
 
   return getSupabaseWorkerAppData(workerId);
+}
+
+export async function reviewSupabaseTaskCompletion(taskId: string, decision: 'accept' | 'reject', note?: string): Promise<Task | null> {
+  if (shouldUseSupabaseIoTModel()) {
+    const proof = iotTaskProofs.get(taskId);
+    const snapshot = await getSupabaseIoTSnapshot();
+    const task = snapshot.tasks.find((item) => item.id === taskId) ?? null;
+    const worker = snapshot.workers.find((item) => item.id === proof?.workerId) ?? snapshot.workers[0] ?? null;
+
+    if (!task || !proof) {
+      return task;
+    }
+
+    proof.status = decision === 'accept' ? 'ACCEPTED' : 'REJECTED';
+    proof.note = note?.trim() || (decision === 'accept' ? 'Accepted by manager' : 'Please submit a clearer completion photo.');
+    iotTaskProofs.set(taskId, proof);
+    iotRuntimeNotifications.unshift({
+      id: `iot-task-review-${crypto.randomUUID()}`,
+      title: decision === 'accept' ? 'Completion accepted' : 'Completion needs revision',
+      detail: decision === 'accept'
+        ? `${task.title} was accepted by manager.`
+        : `${task.title} was rejected. ${proof.note}`,
+      tone: decision === 'accept' ? 'success' : 'warning',
+      targetLabel: 'Open task',
+      targetSection: 'tasks',
+      targetWorkerId: worker?.id,
+      createdAt: new Date().toISOString(),
+      read: false
+    });
+
+    return applyIoTTaskProofs([task])[0] ?? task;
+  }
+
+  const [row] = await selectRows<SupabaseTaskRow>('tasks', `select=*&id=eq.${encodeFilterValue(taskId)}&limit=1`);
+
+  if (!row) return null;
+
+  const task = mapTask(row);
+  const workerRows = await selectRows<SupabaseWorkerRow>('workers', `select=*&name=eq.${encodeFilterValue(task.owner)}&limit=1`);
+  const worker = workerRows[0] ? mapWorker(workerRows[0]) : null;
+  const status = decision === 'accept' ? 'Done' : 'In Progress';
+  const reviewNote = note?.trim() || (decision === 'accept' ? 'Accepted by manager' : 'Please submit a clearer completion photo.');
+  const [updated] = await patchRows<SupabaseTaskRow>('tasks', `id=eq.${encodeFilterValue(taskId)}`, {
+    status,
+    due: decision === 'accept' ? 'Done' : 'Needs revision',
+    tone: decision === 'accept' ? 'success' : 'warning',
+    completion_proof_status: decision === 'accept' ? 'ACCEPTED' : 'REJECTED',
+    completion_proof_note: reviewNote
+  });
+
+  if (worker) {
+    await patchRows('workers', `id=eq.${encodeFilterValue(worker.id)}`, { status: decision === 'accept' ? 'done' : 'working' });
+    await createSupabaseNotification({
+      title: decision === 'accept' ? 'Completion accepted' : 'Completion needs revision',
+      detail: decision === 'accept' ? `${task.title} was accepted by manager.` : `${task.title} was rejected. ${reviewNote}`,
+      tone: decision === 'accept' ? 'success' : 'warning',
+      targetLabel: 'Open task',
+      targetSection: 'tasks',
+      targetWorkerId: worker.id
+    });
+  }
+
+  return updated ? mapTask(updated) : null;
 }
 
 export async function reportSupabaseWorkerHazard(workerId: string, input: { hazardType?: string; note?: string }) {
@@ -908,7 +1045,8 @@ async function getSupabaseIoTWorkerAppData(workerId: string) {
       endsAt: null
     } : null,
     latestRisk: snapshot.latestRisk[0] ?? null,
-    activeIncident: snapshot.activeIncidents[0] ?? null
+    activeIncident: snapshot.activeIncidents[0] ?? null,
+    latestPpeCheck: getLatestPpeCheck(workerId)
   };
 }
 
@@ -935,7 +1073,7 @@ async function getSupabaseIoTSnapshot() {
       environment: makeStubWorkerEnvironment(worker)
     }))
   ];
-  const tasks = makeIoTTasks(primaryWorker, latestEnvironment, latestWorkHour);
+  const tasks = applyIoTTaskProofs(makeIoTTasks(primaryWorker, latestEnvironment, latestWorkHour));
   const activeIncidents = warningRows
     .filter((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning))
     .map((row) => mapIoTWarningIncident(row, primaryWorker))
@@ -1059,6 +1197,27 @@ function makeIoTTasks(worker: Worker, environment: IoTEnvironmentConditionRow | 
   ];
 }
 
+function applyIoTTaskProofs(tasks: Task[]) {
+  return tasks.map((task) => {
+    const proof = iotTaskProofs.get(task.id);
+
+    if (!proof) {
+      return task;
+    }
+
+    return {
+      ...task,
+      status: proof.status === 'ACCEPTED' ? 'Done' : proof.status === 'REJECTED' ? 'In Progress' : 'Review',
+      due: proof.status === 'ACCEPTED' ? 'Done' : proof.status === 'REJECTED' ? 'Needs revision' : 'Proof ready',
+      tone: proof.status === 'REJECTED' ? 'warning' as Tone : 'success' as Tone,
+      completionProofImage: proof.imageDataUrl,
+      completionProofSubmittedAt: proof.submittedAt,
+      completionProofStatus: proof.status,
+      completionProofNote: proof.note
+    };
+  });
+}
+
 function createSupabaseIoTStubTask(input: CreateTaskInput): Task {
   const workload = inferWorkload(input.taskTemplate, input.quantity);
   const base = fallbackTasks[0];
@@ -1127,7 +1286,7 @@ function makeIoTNotifications(
     read: false
   }] : [];
 
-  return [...warningNotifications, ...inactivityNotifications, ...restNotifications, ...environmentNotification, ...fallbackNotifications]
+  return [...iotRuntimeNotifications, ...warningNotifications, ...inactivityNotifications, ...restNotifications, ...environmentNotification, ...fallbackNotifications]
     .sort((left, right) => new Date(right.createdAt ?? '').getTime() - new Date(left.createdAt ?? '').getTime());
 }
 
@@ -1489,7 +1648,11 @@ function mapTask(row: SupabaseTaskRow): Task {
     schedulerRecommendation,
     status: row.status,
     due: row.due,
-    tone: row.tone as Tone
+    tone: row.tone as Tone,
+    completionProofImage: row.completion_proof_image ?? undefined,
+    completionProofSubmittedAt: row.completion_proof_submitted_at ?? undefined,
+    completionProofStatus: row.completion_proof_status ?? undefined,
+    completionProofNote: row.completion_proof_note ?? undefined
   };
 }
 
@@ -1510,7 +1673,11 @@ function taskToRow(task: Task): SupabaseTaskRow {
     scheduler_recommendation: task.schedulerRecommendation,
     status: task.status,
     due: task.due,
-    tone: task.tone
+    tone: task.tone,
+    completion_proof_image: task.completionProofImage ?? null,
+    completion_proof_submitted_at: task.completionProofSubmittedAt ?? null,
+    completion_proof_status: task.completionProofStatus ?? null,
+    completion_proof_note: task.completionProofNote ?? null
   };
 }
 
@@ -1744,6 +1911,10 @@ type SupabaseTaskRow = {
   status: string;
   due: string;
   tone: string;
+  completion_proof_image?: string | null;
+  completion_proof_submitted_at?: string | null;
+  completion_proof_status?: 'PENDING' | 'ACCEPTED' | 'REJECTED' | null;
+  completion_proof_note?: string | null;
 };
 
 type SupabaseEnvironmentRow = {
@@ -1831,6 +2002,10 @@ type IoTRestBreakRow = {
   status: string | null;
   work_hours_id: number | string | null;
 };
+
+function isImageDataUrl(value: string) {
+  return /^data:image\/(png|jpe?g|webp);base64,/i.test(value);
+}
 
 export const supabaseFallbackData: WorkforceData = {
   workers: fallbackWorkers,

@@ -150,6 +150,38 @@ export function useWorkforceData() {
     return payload;
   };
 
+  const reviewTaskCompletion = async (taskId: string, decision: 'accept' | 'reject', note?: string) => {
+    const response = await fetch(`/api/tasks/${taskId}/review/${decision}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ note })
+    });
+    const payload = (await response.json()) as Task | { error?: string };
+
+    if (!response.ok || isTaskError(payload)) {
+      throw new Error('error' in payload ? payload.error ?? 'Unable to review task' : 'Unable to review task');
+    }
+
+    try {
+      const workforceResponse = await fetch('/api/workforce');
+
+      if (!workforceResponse.ok) {
+        throw new Error(`API returned ${workforceResponse.status}`);
+      }
+
+      setData((await workforceResponse.json()) as WorkforceData);
+    } catch {
+      setData((current) => ({
+        ...current,
+        tasks: current.tasks.map((task) => task.id === payload.id ? payload : task)
+      }));
+    }
+
+    return payload;
+  };
+
   const getWorkerRestRecommendation = async (workerId: string) => {
     const response = await fetch(`/api/workers/${workerId}/rest-recommendation`);
     const payload = (await response.json()) as WorkerRestRecommendation | { error?: string };
@@ -189,6 +221,7 @@ export function useWorkforceData() {
     markNotificationRead,
     createTask,
     autoAssignTask,
+    reviewTaskCompletion,
     getWorkerRestRecommendation,
     grantWorkerRest
   };

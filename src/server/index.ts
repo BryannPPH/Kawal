@@ -51,10 +51,12 @@ import {
   listSupabaseDevices,
   markSupabaseNotificationRead,
   completeSupabaseWorkerAssignment,
+  performSupabaseWorkerPpeCheck,
   getSupabaseWorkerRestRecommendation,
   grantSupabaseWorkerRest,
   reportSupabaseWorkerHazard,
   requestSupabaseWorkerRest,
+  reviewSupabaseTaskCompletion,
   shouldUseSupabase,
   triggerSupabaseWorkerSos,
   updateSupabaseWorkerShiftStatus,
@@ -69,6 +71,7 @@ import {
   readWorkerNotification,
   reportWorkerHazard,
   requestWorkerRest,
+  reviewWorkerTaskCompletion,
   triggerWorkerSos,
   updateWorkerShiftStatus
 } from './workerActions';
@@ -200,19 +203,27 @@ const server = Bun.serve({
         return jsonResponse({ error: 'Camera image is required' }, { status: 400 });
       }
 
-      if (useSupabase) {
-        return jsonResponse({ error: 'PPE check is currently wired to the local database mode' }, { status: 501 });
-      }
-
-      return jsonResponse(await performWorkerPpeCheck(workerPpeCheckMatch[1], body.imageDataUrl), { status: 201 });
+      return jsonResponse(useSupabase
+        ? await performSupabaseWorkerPpeCheck(workerPpeCheckMatch[1], body.imageDataUrl)
+        : await performWorkerPpeCheck(workerPpeCheckMatch[1], body.imageDataUrl), { status: 201 });
     }
 
     const workerCompleteMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/complete$/);
 
     if (request.method === 'POST' && workerCompleteMatch) {
-      return jsonResponse(useSupabase
-        ? await completeSupabaseWorkerAssignment(workerCompleteMatch[1])
-        : await completeWorkerAssignment(workerCompleteMatch[1]));
+      const body = await readJsonBody<{ imageDataUrl?: string }>(request);
+
+      if (!body.imageDataUrl) {
+        return jsonResponse({ error: 'Completion proof photo is required' }, { status: 400 });
+      }
+
+      try {
+        return jsonResponse(useSupabase
+          ? await completeSupabaseWorkerAssignment(workerCompleteMatch[1], body.imageDataUrl)
+          : await completeWorkerAssignment(workerCompleteMatch[1], body.imageDataUrl));
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to submit completion proof' }, { status: 409 });
+      }
     }
 
     const workerHazardMatch = url.pathname.match(/^\/api\/workers\/([^/]+)\/hazards$/);
@@ -401,6 +412,22 @@ const server = Bun.serve({
         return task ? jsonResponse(task) : jsonResponse({ error: 'Task not found' }, { status: 404 });
       } catch (error) {
         return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to assign task' }, { status: 409 });
+      }
+    }
+
+    const reviewTaskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/review\/(accept|reject)$/);
+
+    if (request.method === 'PATCH' && reviewTaskMatch) {
+      const body = await readJsonBody<{ note?: string }>(request);
+
+      try {
+        const task = useSupabase
+          ? await reviewSupabaseTaskCompletion(reviewTaskMatch[1], reviewTaskMatch[2] as 'accept' | 'reject', body.note)
+          : await reviewWorkerTaskCompletion(reviewTaskMatch[1], reviewTaskMatch[2] as 'accept' | 'reject', body.note);
+
+        return task ? jsonResponse(task) : jsonResponse({ error: 'Task not found' }, { status: 404 });
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : 'Unable to review task' }, { status: 409 });
       }
     }
 
