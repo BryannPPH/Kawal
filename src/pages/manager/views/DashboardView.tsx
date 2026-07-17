@@ -1,8 +1,6 @@
-import { Activity, BrainCircuit, Check, ClipboardList, ShieldAlert, TimerReset, TrendingUp, Users } from 'lucide-react';
+import { Activity, BrainCircuit, Check, ClipboardList, TimerReset, TrendingUp, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { SchedulerRecommendation, Task, Worker } from '../../../types/workforce';
-import { AssignmentPanel } from '../components/AssignmentPanel';
-import { MetricCard } from '../components/MetricCard';
 import { WorkerBoard } from '../components/WorkerBoard';
 
 type DashboardViewProps = {
@@ -10,13 +8,9 @@ type DashboardViewProps = {
   workers: Worker[];
   tasks: Task[];
   onSelectWorker: (worker: Worker) => void;
-  onAutoAssign: (taskId: string, workerId?: string) => Promise<Task>;
 };
 
-export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, onAutoAssign }: DashboardViewProps) {
-  const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
-  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
+export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }: DashboardViewProps) {
   const [liveForecast, setLiveForecast] = useState<SchedulerRecommendation['chronosForecast'] | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const workingCount = workers.filter((worker) => worker.status === 'working').length;
@@ -27,22 +21,12 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
   const openTaskCount = managerTasks.filter((task) => !isTaskComplete(task)).length;
   const averageFatigue = workers.length ? Math.round(workers.reduce((sum, worker) => sum + worker.fatigue, 0) / workers.length) : 0;
   const completionPct = managerTasks.length ? Math.round(((managerTasks.length - openTaskCount) / managerTasks.length) * 100) : 0;
-  const visualMetrics = [
-    { label: 'Crew in motion', value: String(workingCount), detail: `${waitingCount} waiting assignment`, icon: Users },
-    { label: 'Open tasks', value: String(openTaskCount), detail: `${reviewCount} ready for review`, icon: ClipboardList },
-    { label: 'Avg fatigue', value: `${averageFatigue}%`, detail: `${breakCount} currently on break`, icon: ShieldAlert }
-  ];
-  const recommendedTask = useMemo(() => {
-    const unassignedTasks = managerTasks.filter((task) => task.owner === 'Unassigned');
-    return unassignedTasks.find((task) => task.schedulerRecommendation.selectedWorkerRecommendations.length > 0) ?? unassignedTasks[0] ?? null;
-  }, [managerTasks]);
   const forecastTask = useMemo(() => {
-    return recommendedTask
-      ?? managerTasks.find((task) => task.status.toLowerCase().includes('progress'))
+    return managerTasks.find((task) => task.status.toLowerCase().includes('progress'))
       ?? managerTasks.find((task) => !isTaskComplete(task))
       ?? managerTasks[0]
       ?? null;
-  }, [managerTasks, recommendedTask]);
+  }, [managerTasks]);
   const productivityForecast = forecastTask?.schedulerRecommendation.chronosForecast ?? liveForecast;
 
   useEffect(() => {
@@ -118,46 +102,22 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
     };
   }, [averageFatigue, breakCount, forecastTask, workers, workingCount]);
 
-  const selectDashboardWorker = (worker: Worker) => {
-    setAssignmentError(null);
-    setAssignmentSuccess(null);
-    onSelectWorker(worker);
-  };
-
-  const approveRecommendedAssignment = async (workerId?: string) => {
-    if (!recommendedTask) {
-      return;
-    }
-
-    setAssigningTaskId(recommendedTask.id);
-    setAssignmentError(null);
-    setAssignmentSuccess(null);
-
-    try {
-      const assignedTask = await onAutoAssign(recommendedTask.id, workerId);
-      const assignedWorker = workers.find((worker) => worker.name === assignedTask.owner);
-
-      if (assignedWorker) {
-        onSelectWorker(assignedWorker);
-      }
-
-      setAssignmentSuccess(`${assignedTask.taskTemplate} assigned to ${assignedTask.owner}.`);
-    } catch (error) {
-      setAssignmentError(error instanceof Error ? error.message : 'Unable to assign task');
-    } finally {
-      setAssigningTaskId(null);
-    }
-  };
-
   return (
     <div className="space-y-8">
       <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
         <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="flex items-center p-6 sm:p-7">
-            <div className="grid w-full gap-4 sm:grid-cols-3">
-              {visualMetrics.map((item) => (
-                <MetricCard key={item.label} {...item} />
-              ))}
+          <div className="p-5 sm:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#2F2C2A]">Today&apos;s Focus</p>
+                <p className="mt-1 text-sm text-[#776B63]">Connected to live task, rest, and crew signals.</p>
+              </div>
+              <Check size={18} className="text-[#55936A]" />
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <FocusCard icon={ClipboardList} label="Task flow" value={`${openTaskCount} open`} detail={`${reviewCount} ready for review from Tasks.`} />
+              <FocusCard icon={TimerReset} label="Rest control" value={`${breakCount} on break`} detail={`${averageFatigue}% average fatigue from live crew.`} />
+              <FocusCard icon={Users} label="Crew coverage" value={`${workers.length} tracked`} detail={`${workingCount} working / ${waitingCount} waiting.`} />
             </div>
           </div>
 
@@ -179,20 +139,6 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[#F3D7C8] bg-white p-5 sm:p-6">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[#2F2C2A]">Today&apos;s Focus</p>
-          </div>
-          <Check size={18} className="text-[#55936A]" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <FocusCard icon={ClipboardList} label="Task flow" value={`${openTaskCount} open`} detail="Create, assign, and review from Tasks." />
-          <FocusCard icon={TimerReset} label="Rest control" value={`${breakCount} on break`} detail="Fatigue signals stay visible in IoT." />
-          <FocusCard icon={Users} label="Crew coverage" value={`${workers.length} tracked`} detail="Worker status updates as tasks move." />
-        </div>
-      </section>
-
       <ProjectPaceForecastPanel
         forecast={productivityForecast}
         loading={forecastLoading && !productivityForecast}
@@ -200,18 +146,16 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker, 
         workers={workers}
       />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <AssignmentPanel
-          selectedWorker={selectedWorker}
+      <section>
+        <WorkerBoard
           workers={workers}
-          task={recommendedTask}
-          assigning={Boolean(recommendedTask && assigningTaskId === recommendedTask.id)}
-          error={assignmentError}
-          success={assignmentSuccess}
-          onSelectWorker={selectDashboardWorker}
-          onApprove={approveRecommendedAssignment}
+          selectedWorker={selectedWorker}
+          onSelectWorker={onSelectWorker}
+          compact
+          rankWorkingFatigueFirst
+          showFilter={false}
+          title="Worker's Condition"
         />
-        <WorkerBoard workers={workers} selectedWorker={selectedWorker} onSelectWorker={selectDashboardWorker} compact />
       </section>
     </div>
   );
@@ -238,7 +182,6 @@ function ProjectPaceForecastPanel({
   const completedCount = completedTasks.length;
   const remainingCount = Math.max(0, plannedCount - completedCount);
   const completionPct = plannedCount ? Math.round((completedCount / plannedCount) * 100) : 0;
-  const totalEstimatedHours = projectTasks.reduce((sum, task) => sum + getTaskEstimatedHours(task), 0);
   const remainingEstimatedHours = projectTasks
     .filter((task) => !isTaskComplete(task))
     .reduce((sum, task) => sum + getTaskEstimatedHours(task), 0);
@@ -249,7 +192,6 @@ function ProjectPaceForecastPanel({
   const paceStatus = getPaceStatus(plannedCount, completedCount, paceRatio);
   const paceClass = getPaceClass(paceStatus);
   const values = forecast?.forecastValues?.length ? forecast.forecastValues : [];
-  const modelReady = forecast?.modelStatus === 'READY';
   const chartSeries = buildProjectPaceSeries({
     plannedCount,
     completedCount,
@@ -267,82 +209,50 @@ function ProjectPaceForecastPanel({
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[#F3D7C8] bg-white">
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="flex items-center gap-2 text-sm font-semibold text-[#C95119]">
-                <BrainCircuit size={17} />
-                Project Pace Forecast
-              </p>
-              <h3 className="mt-3 text-2xl font-semibold tracking-normal text-[#2F2C2A]">
-                {plannedCount ? `${paceStatus} / ${completionPct}% complete` : 'Create tasks to start pace tracking'}
-              </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#776B63]">
-                {plannedCount
-                  ? `${projectName}: ${completedCount} accepted of ${plannedCount} planned tasks. ${recommendation}`
-                  : 'The forecast compares manager-planned tasks against accepted completion proof and observed worker-hours.'}
-              </p>
-            </div>
-            <span className={`inline-flex h-9 shrink-0 items-center justify-center rounded-xl px-3 text-xs font-bold ${paceClass}`}>
-              {paceStatus}
-            </span>
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#C95119]">
+              <BrainCircuit size={17} />
+              Project Pace Forecast
+            </p>
+            <h3 className="mt-3 text-2xl font-semibold tracking-normal text-[#2F2C2A]">
+              {plannedCount ? 'Utility dashboard for future task completion' : 'Create tasks to start completion planning'}
+            </h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#776B63]">
+              {plannedCount
+                ? `${projectName}: tracking ${plannedCount} planned tasks for upcoming completion readiness. ${recommendation}`
+                : 'The dashboard compares planned tasks against accepted completion proof once work starts.'}
+            </p>
           </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <ForecastMetric label="Planned work" value={`${plannedCount} tasks`} />
-            <ForecastMetric label="Actual productivity" value={actualRate ? `${formatRate(actualRate)} task/hr` : 'No accepted work'} />
-            <ForecastMetric label="Required pace" value={requiredRate ? `${formatRate(requiredRate)} task/hr` : 'No remaining work'} />
-          </div>
-
-          <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <div className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[#2F2C2A]">Plan vs Accepted</p>
-                <span className="text-sm font-semibold text-[#776B63]">{completionPct}%</span>
-              </div>
-              <div className="mt-4 h-3 overflow-hidden rounded-full bg-white">
-                <div className="h-full rounded-full bg-[#FD7124]" style={{ width: `${completionPct}%` }} />
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <SmallStat label="Accepted" value={String(completedCount)} />
-                <SmallStat label="In review" value={String(reviewTasks.length)} />
-                <SmallStat label="Remaining" value={String(remainingCount)} />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
-              <ProjectPaceLineChart
-                labels={chartSeries.labels}
-                planned={chartSeries.planned}
-                actual={chartSeries.actual}
-                forecasted={chartSeries.forecasted}
-                maxY={chartSeries.maxY}
-                loading={loading}
-              />
-            </div>
-          </div>
+          <span className={`inline-flex h-9 shrink-0 items-center justify-center rounded-xl px-3 text-xs font-bold ${paceClass}`}>
+            {paceStatus}
+          </span>
         </div>
 
-        <div className="border-t border-[#F3D7C8] bg-[#FFF8F4] p-5 sm:p-6 lg:border-l lg:border-t-0">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[#2F2C2A]">Pace Inputs</p>
-              <p className="mt-1 text-sm text-[#776B63]">Actual work vs plan.</p>
-            </div>
-            <TrendingUp size={19} className="text-[#FD7124]" />
-          </div>
-          <div className="mt-6 space-y-5">
-            <VisualBar label="Pace ratio" value={paceRatio ? Math.round(Math.min(1.25, paceRatio) * 80) : 0} accent={paceRatio >= 1 ? 'bg-[#55936A]' : paceRatio >= 0.85 ? 'bg-[#FAA745]' : 'bg-[#CF5A4F]'} />
-            <VisualBar label="Estimated hours used" value={totalEstimatedHours ? Math.round((observedWorkerHours / totalEstimatedHours) * 100) : 0} accent="bg-[#FD7124]" />
-            <VisualBar label="Forecast health" value={modelReady ? 88 : 38} accent={modelReady ? 'bg-[#55936A]' : 'bg-[#FAA745]'} />
-          </div>
-          <div className="mt-5 rounded-2xl bg-white p-4">
-            <p className="text-xs font-semibold uppercase text-[#A09188]">Chronos</p>
-            <p className="mt-2 text-sm font-semibold text-[#2F2C2A]">{forecast?.futureProductivity ?? 'No model output yet'}</p>
-            <p className="mt-2 text-xs leading-5 text-[#776B63]">
-              {forecast?.modelStatus ?? 'PENDING'} / {forecast?.confidence ?? 'COLD_START'} / {formatHours(remainingEstimatedHours)} remaining estimate
-            </p>
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <ForecastMetric label="Planned work" value={`${plannedCount} tasks`} />
+          <ForecastMetric label="Actual productivity" value={`${formatRate(actualRate)} task/hr`} />
+          <ForecastMetric label="Required pace" value={`${formatRate(requiredRate)} task/hr`} />
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+          <ProjectPaceLineChart
+            labels={chartSeries.labels}
+            planned={chartSeries.planned}
+            actual={chartSeries.actual}
+            forecasted={chartSeries.forecasted}
+            maxY={chartSeries.maxY}
+            loading={loading}
+          />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[#F3D7C8] bg-[#FFF8F4] p-4">
+          <p className="text-sm font-semibold text-[#2F2C2A]">Plan vs Accepted</p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <SmallStat label="Accepted" value={String(completedCount)} />
+            <SmallStat label="In review" value={String(reviewTasks.length)} />
+            <SmallStat label="Remaining" value={String(remainingCount)} />
           </div>
         </div>
       </div>
@@ -658,14 +568,6 @@ function getPaceRecommendation(input: {
 
 function formatRate(value: number) {
   return value >= 1 ? value.toFixed(1) : value.toFixed(2);
-}
-
-function formatHours(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '0h';
-  }
-
-  return value >= 10 ? `${Math.round(value)}h` : `${value.toFixed(1)}h`;
 }
 
 function FocusCard({ icon: Icon, label, value, detail }: { icon: typeof Users; label: string; value: string; detail: string }) {

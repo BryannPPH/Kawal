@@ -298,7 +298,6 @@ export function ManagerPage({ onLogout }: ManagerPageProps) {
         tasks={tasks}
         selectedWorker={selectedWorker}
         onSelectWorker={(worker) => setSelectedWorkerId(worker.id)}
-        onAutoAssign={autoAssignTask}
       />
     );
   };

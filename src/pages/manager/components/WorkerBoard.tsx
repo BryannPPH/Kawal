@@ -9,11 +9,29 @@ type WorkerBoardProps = {
   onSelectWorker: (worker: Worker) => void;
   onOpenDetails?: (worker: Worker) => void;
   compact?: boolean;
+  rankWorkingFatigueFirst?: boolean;
+  showFilter?: boolean;
+  title?: string;
 };
 
-export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDetails, compact = false }: WorkerBoardProps) {
+export function WorkerBoard({
+  workers,
+  selectedWorker,
+  onSelectWorker,
+  onOpenDetails,
+  compact = false,
+  rankWorkingFatigueFirst: shouldRankWorkingFatigueFirst = false,
+  showFilter = true,
+  title = 'Worker Dispatch'
+}: WorkerBoardProps) {
   const [filter, setFilter] = useState<WorkerStatus | 'all'>('all');
-  const visibleWorkers = useMemo(() => workers.filter((worker) => filter === 'all' || worker.status === filter), [filter]);
+  const visibleWorkers = useMemo(
+    () => {
+      const filteredWorkers = workers.filter((worker) => filter === 'all' || worker.status === filter);
+      return shouldRankWorkingFatigueFirst ? [...filteredWorkers].sort(rankWorkingFatigueFirst) : filteredWorkers;
+    },
+    [filter, shouldRankWorkingFatigueFirst, workers]
+  );
   const statusSummary = (['working', 'waiting', 'break', 'done'] as const).map((status) => ({
     status,
     count: workers.filter((worker) => worker.status === status).length
@@ -23,22 +41,24 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDet
     <section className={`rounded-2xl border border-[#F3D7C8] bg-white ${compact ? 'p-4' : 'p-5 sm:p-6'}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold text-[#2F2C2A]">Worker Dispatch</p>
+          <p className="text-sm font-semibold text-[#2F2C2A]">{title}</p>
           {!compact ? <p className="mt-1 text-sm text-[#776B63]">A lighter board for availability, fatigue, and current assignment.</p> : null}
         </div>
-        <label className={`w-full ${compact ? 'lg:w-40' : 'lg:w-48'}`}>
-          <span className="sr-only">Filter worker status</span>
-          <select
-            value={filter}
-            onChange={(event) => setFilter(event.target.value as WorkerStatus | 'all')}
-            className="field-input bg-white font-semibold"
-          >
-            <option value="all">All workers</option>
-            {(['working', 'waiting', 'break', 'done'] as const).map((status) => (
-              <option key={status} value={status}>{statusLabels[status]}</option>
-            ))}
-          </select>
-        </label>
+        {showFilter ? (
+          <label className={`w-full ${compact ? 'lg:w-40' : 'lg:w-48'}`}>
+            <span className="sr-only">Filter worker status</span>
+            <select
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as WorkerStatus | 'all')}
+              className="field-input bg-white font-semibold"
+            >
+              <option value="all">All workers</option>
+              {(['working', 'waiting', 'break', 'done'] as const).map((status) => (
+                <option key={status} value={status}>{statusLabels[status]}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       {!compact ? <div className="mt-6 grid gap-3 sm:grid-cols-4">
@@ -80,4 +100,19 @@ export function WorkerBoard({ workers, selectedWorker, onSelectWorker, onOpenDet
       </div>
     </section>
   );
+}
+
+function rankWorkingFatigueFirst(left: Worker, right: Worker) {
+  const leftWorkingRank = left.status === 'working' ? 0 : 1;
+  const rightWorkingRank = right.status === 'working' ? 0 : 1;
+
+  if (leftWorkingRank !== rightWorkingRank) {
+    return leftWorkingRank - rightWorkingRank;
+  }
+
+  if (left.status === 'working' && right.status === 'working' && left.fatigue !== right.fatigue) {
+    return right.fatigue - left.fatigue;
+  }
+
+  return right.fatigue - left.fatigue;
 }
