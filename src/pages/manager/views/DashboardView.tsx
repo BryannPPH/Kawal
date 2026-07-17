@@ -133,7 +133,6 @@ export function DashboardView({ selectedWorker, workers, tasks, onSelectWorker }
             <div className="mt-6 space-y-5">
               <VisualBar label="Completion" value={completionPct} accent="bg-[#55936A]" />
               <VisualBar label="Workers active" value={workers.length ? Math.round((workingCount / workers.length) * 100) : 0} accent="bg-[#FD7124]" />
-              <VisualBar label="Fatigue load" value={averageFatigue} accent={averageFatigue >= 65 ? 'bg-[#CF5A4F]' : 'bg-[#FAA745]'} />
             </div>
           </div>
         </div>
@@ -225,9 +224,11 @@ function ProjectPaceForecastPanel({
                 : 'The dashboard compares planned tasks against accepted completion proof once work starts.'}
             </p>
           </div>
-          <span className={`inline-flex h-9 shrink-0 items-center justify-center rounded-xl px-3 text-xs font-bold ${paceClass}`}>
-            {paceStatus}
-          </span>
+          {paceStatus !== 'Baseline Pending' ? (
+            <span className={`inline-flex h-9 shrink-0 items-center justify-center rounded-xl px-3 text-xs font-bold ${paceClass}`}>
+              {paceStatus}
+            </span>
+          ) : null}
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
