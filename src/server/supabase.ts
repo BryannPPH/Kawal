@@ -29,6 +29,11 @@ const iotTaskProofs = new Map<string, {
   note?: string;
 }>();
 const iotRuntimeNotifications: Notification[] = [];
+const iotIncidentStateOverrides = new Map<string, {
+  state: string;
+  escalationLevel?: number;
+  updatedAt: string;
+}>();
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey);
@@ -297,8 +302,20 @@ export async function getSupabaseIncidentCenter(): Promise<IncidentCenterData> {
 
 export async function updateSupabaseIncidentState(incidentId: string, state: string): Promise<IoTIncident | null> {
   if (shouldUseSupabaseIoTModel()) {
-    const incident = (await getSupabaseIoTSnapshot()).incidentHistory.find((item) => item.id === incidentId) ?? null;
-    return incident ? { ...incident, state } : null;
+    const snapshot = await getSupabaseIoTSnapshot();
+    const incident = snapshot.incidentHistory.find((item) => item.id === incidentId) ?? snapshot.activeIncidents.find((item) => item.id === incidentId) ?? null;
+
+    if (!incident) {
+      return null;
+    }
+
+    iotIncidentStateOverrides.set(incidentId, {
+      state,
+      escalationLevel: state === 'ESCALATED' ? Math.max(incident.escalation_level + 1, 2) : incident.escalation_level,
+      updatedAt: new Date().toISOString()
+    });
+
+    return applyIoTIncidentStateOverride(incident);
   }
 
   const now = new Date().toISOString();
@@ -1077,10 +1094,13 @@ async function getSupabaseIoTSnapshot() {
   const activeIncidents = warningRows
     .filter((row) => isOpenWarning(row) && isAfterWarningClear(row, latestClearWarning))
     .map((row) => mapIoTWarningIncident(row, primaryWorker))
-    .filter((incident): incident is IoTIncident => Boolean(incident));
+    .filter((incident): incident is IoTIncident => Boolean(incident))
+    .map(applyIoTIncidentStateOverride)
+    .filter((incident) => !['RESOLVED', 'FALSE_ALARM'].includes(incident.state));
   const incidentHistory = warningRows
     .map((row) => mapIoTWarningIncident(row, primaryWorker))
-    .filter((incident): incident is IoTIncident => Boolean(incident));
+    .filter((incident): incident is IoTIncident => Boolean(incident))
+    .map(applyIoTIncidentStateOverride);
   const restRequests = restBreakRows.map((row) => mapIoTRestRequest(row, primaryWorker));
   const nearMissReports = [
     ...inactivityRows.map((row) => mapIoTInactivityNearMiss(row, primaryWorker)),
@@ -1347,6 +1367,20 @@ function mapIoTWarningIncident(row: IoTWarningRow, worker: Worker): IoTIncident 
     device_id: 'iot-supabase-stream',
     opened_at: row.created_at,
     escalation_level: event === 'SOS' || event === 'JATUH' ? 1 : 0
+  };
+}
+
+function applyIoTIncidentStateOverride(incident: IoTIncident): IoTIncident {
+  const override = iotIncidentStateOverrides.get(incident.id);
+
+  if (!override) {
+    return incident;
+  }
+
+  return {
+    ...incident,
+    state: override.state,
+    escalation_level: override.escalationLevel ?? incident.escalation_level
   };
 }
 
